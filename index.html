@@ -4,21 +4,422 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MindBack 产品看板</title>
-    <meta http-equiv="refresh" content="0; url=MindBack产品看板_部署版%20(13).html" />
     <style>
-      body { font-family: -apple-system, "PingFang SC", "Helvetica Neue", sans-serif; padding: 24px; }
-      a { color: #1d4ed8; }
+      :root{
+        --bg:#f2f3f7; --card:#fff; --border:#e4e6ef; --text:#111827; --sub:#6b7280; --muted:#9ca3af;
+        --blue:#1d4ed8; --blue2:#78aafa;
+        --done-bg:#d3ecbf;--done-fg:#2d6a1f;
+        --prog-bg:#dbeafe;--prog-fg:#1d4ed8;
+        --risk-bg:#fef9c3;--risk-fg:#854d0e;
+        --block-bg:#fee2e2;--block-fg:#991b1b;
+        --ns-bg:#f3f4f6;--ns-fg:#6b7280;
+      }
+      *{box-sizing:border-box}
+      body{margin:0;font-family:-apple-system,"PingFang SC","Helvetica Neue",sans-serif;background:var(--bg);color:var(--text);font-size:13px;min-height:100vh}
+      a{color:var(--blue);text-decoration:none}
+      a:hover{text-decoration:underline}
+
+      .header{background:#111;color:#fff;height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 20px;position:sticky;top:0;z-index:10}
+      .brand{display:flex;align-items:center;gap:10px}
+      .dot{width:8px;height:8px;border-radius:50%;background:var(--blue2)}
+      .title{font-weight:800;letter-spacing:.3px}
+      .meta{display:flex;align-items:center;gap:10px;font-size:11px;color:rgba(255,255,255,.65)}
+      .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(255,255,255,.18);padding:4px 10px;border-radius:100px}
+      .db-dot{width:6px;height:6px;border-radius:50%;background:#fbbf24}
+      .btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer}
+      .btn:hover{background:rgba(255,255,255,.18)}
+
+      .tabs{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:52px;z-index:9;display:flex;gap:4px;padding:0 20px}
+      .tab{padding:12px 14px;border-bottom:2px solid transparent;color:var(--sub);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px}
+      .tab:hover{color:var(--text)}
+      .tab.active{color:var(--text);border-bottom-color:var(--blue2);font-weight:700}
+
+      .wrap{max-width:1200px;margin:0 auto;padding:18px 20px 60px}
+      .view{display:none}
+      .view.active{display:block}
+
+      .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+      .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:14px 16px}
+      .card h3{margin:0 0 8px 0;font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--sub)}
+      .row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+      .small{font-size:11px;color:var(--sub)}
+      .muted{color:var(--muted)}
+
+      .kpis{display:flex;gap:10px;flex-wrap:wrap}
+      .kpi{flex:1;min-width:140px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;background:#fff}
+      .kpi .n{font-size:22px;font-weight:800;line-height:1}
+      .kpi .l{font-size:11px;color:var(--sub);margin-top:4px}
+
+      .list{display:flex;flex-direction:column;gap:8px}
+      .item{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;border:1px solid #f0f1f5;border-radius:12px;padding:10px 12px;background:#fff}
+      .item .name{font-weight:700}
+      .tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+      .tag{font-size:10px;border-radius:6px;padding:2px 7px;background:#f3f4f6;color:#374151}
+
+      .status{display:inline-flex;align-items:center;gap:6px;border-radius:100px;padding:3px 10px;font-size:11px;font-weight:700;white-space:nowrap}
+      .status.done{background:var(--done-bg);color:var(--done-fg)}
+      .status.prog{background:var(--prog-bg);color:var(--prog-fg)}
+      .status.risk{background:var(--risk-bg);color:var(--risk-fg)}
+      .status.block{background:var(--block-bg);color:var(--block-fg)}
+      .status.ns{background:var(--ns-bg);color:var(--ns-fg)}
+
+      details.week{border:1px solid var(--border);border-radius:14px;background:#fff;overflow:hidden}
+      details.week[open]{box-shadow:0 10px 30px rgba(17,24,39,.05)}
+      details.week summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;background:#fff}
+      details.week summary::-webkit-details-marker{display:none}
+      .wk-title{font-weight:900}
+      .wk-sub{font-size:11px;color:var(--sub)}
+      .wk-body{padding:0 14px 14px}
+
+      .empty{border:1px dashed var(--border);border-radius:14px;padding:14px;color:var(--sub);background:#fafbff}
+      .footer{margin-top:18px;font-size:11px;color:var(--sub);display:flex;gap:10px;flex-wrap:wrap}
     </style>
   </head>
   <body>
-    <p>正在跳转到看板页面…</p>
-    <p>
-      如果没有自动跳转，请点击：
-      <a href="MindBack产品看板_部署版%20(13).html">打开 MindBack 产品看板</a>
-    </p>
+    <div class="header">
+      <div class="brand">
+        <div class="dot"></div>
+        <div class="title">MindBack 产品看板</div>
+      </div>
+      <div class="meta">
+        <div class="pill" title="公开只读 · 数据来自 Supabase">
+          <span class="db-dot" id="dbDot"></span>
+          <span id="dbLabel">连接中…</span>
+        </div>
+        <div class="pill">
+          <span class="muted">最后更新</span>
+          <span id="lastUpdated">—</span>
+        </div>
+        <button class="btn" id="legacyBtn" type="button">打开旧版</button>
+      </div>
+    </div>
+
+    <div class="tabs" id="tabs"></div>
+
+    <div class="wrap">
+      <div class="view active" id="view-overview"></div>
+      <div class="view" id="view-features"></div>
+      <div class="view" id="view-bugs"></div>
+      <div class="view" id="view-ops"></div>
+      <div class="view" id="view-archive"></div>
+    </div>
+
     <script>
-      // 兼容不支持 meta refresh 的场景
-      window.location.replace('MindBack产品看板_部署版%20(13).html');
+      // ── Supabase 只读连接（公开可用：publishable/anon key） ──
+      const SUPABASE_URL = 'https://youwcvqibzscimrcumej.supabase.co';
+      const SUPABASE_ANON_KEY = 'sb_publishable__IxFWKd1RZG2qnXRKg5uhg_lxIhgDSx';
+      const SNAPSHOT_KEY = 'prod';
+
+      const LEGACY_FILE = 'MindBack产品看板_部署版%20(13).html';
+
+      const TABS = [
+        { id: 'overview', label: '总览 Overview' },
+        { id: 'features', label: '功能详情' },
+        { id: 'bugs', label: 'Bug 追踪' },
+        { id: 'ops', label: '运营协同' },
+        { id: 'archive', label: '历史归档' },
+      ];
+
+      function $(id){ return document.getElementById(id); }
+
+      function setDbStatus(type, text){
+        const dot = $('dbDot');
+        const label = $('dbLabel');
+        if(!dot || !label) return;
+        label.textContent = text;
+        if(type === 'ok') dot.style.background = '#4ade80';
+        else if(type === 'warn') dot.style.background = '#f97316';
+        else if(type === 'bad') dot.style.background = '#ef4444';
+        else dot.style.background = '#fbbf24';
+      }
+
+      function fmtTime(ts){
+        if(!ts) return '—';
+        const d = new Date(ts);
+        const pad = (n)=> String(n).padStart(2,'0');
+        return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      }
+
+      function statusLabel(s){
+        return s==='done'?'完成'
+          : s==='prog'?'进行中'
+          : s==='risk'?'风险'
+          : s==='block'?'阻塞'
+          : s==='ns'?'待启动'
+          : '未知';
+      }
+
+      function statusClass(s){
+        return s==='done'?'done'
+          : s==='prog'?'prog'
+          : s==='risk'?'risk'
+          : s==='block'?'block'
+          : 'ns';
+      }
+
+      function platformTags(plats){
+        const map = { ios:'iOS', android:'Android', web:'Web', backend:'后端', ai:'AI' };
+        const arr = Array.isArray(plats) ? plats : [];
+        return arr.map(p=>`<span class="tag">${map[p] || p}</span>`).join('');
+      }
+
+      function groupCounts({tasks, bugs, ops, milestones, backlog}){
+        const t = Array.isArray(tasks) ? tasks : [];
+        const b = Array.isArray(bugs) ? bugs : [];
+        const o = Array.isArray(ops) ? ops : [];
+        const m = Array.isArray(milestones) ? milestones : [];
+        const bl = Array.isArray(backlog) ? backlog : [];
+
+        const thisWeek = t.filter(x=>x && x.thisWeek);
+        const done = t.filter(x=>x && x.status==='done');
+        const prog = t.filter(x=>x && x.status==='prog');
+        const riskBlock = t.filter(x=>x && (x.status==='risk' || x.status==='block'));
+        const s0s1 = b.filter(x=>x && (x.severity==='s0' || x.severity==='s1') && x.status!=='done');
+
+        return { t, b, o, m, bl, thisWeek, done, prog, riskBlock, s0s1 };
+      }
+
+      function renderTabs(activeId){
+        const el = $('tabs');
+        el.innerHTML = TABS.map(t=>{
+          const cls = t.id===activeId ? 'tab active' : 'tab';
+          return `<div class="${cls}" data-tab="${t.id}">${t.label}</div>`;
+        }).join('');
+        el.querySelectorAll('[data-tab]').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            const id = btn.getAttribute('data-tab');
+            switchTab(id);
+          });
+        });
+      }
+
+      function switchTab(id){
+        document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+        const view = $('view-'+id);
+        if(view) view.classList.add('active');
+        renderTabs(id);
+      }
+
+      function renderOverview(state, updatedAt){
+        const view = $('view-overview');
+        const c = groupCounts(state);
+
+        const kpiHtml = `
+          <div class="kpis">
+            <div class="kpi"><div class="n">${c.thisWeek.length}</div><div class="l">本周推进（标记 thisWeek）</div></div>
+            <div class="kpi"><div class="n">${c.prog.length}</div><div class="l">进行中任务</div></div>
+            <div class="kpi"><div class="n">${c.riskBlock.length}</div><div class="l">风险/阻塞</div></div>
+            <div class="kpi"><div class="n">${c.s0s1.length}</div><div class="l">未关闭 S0/S1 Bug</div></div>
+          </div>
+        `;
+
+        const weekList = (items, emptyText)=> {
+          if(!items.length) return `<div class="empty">${emptyText}</div>`;
+          return `<div class="list">` + items.slice(0, 12).map(x=>`
+            <div class="item">
+              <div>
+                <div class="name">${x.name || '未命名'}</div>
+                <div class="small">${(x.owners && x.owners.length) ? `负责人：${x.owners.join('、')}` : '<span class="muted">未指定负责人</span>'}</div>
+                ${x.note ? `<div class="small muted" style="margin-top:4px">${x.note}</div>` : ''}
+              </div>
+              <div style="text-align:right;min-width:140px">
+                <div class="tags">${platformTags(x.plat)}</div>
+                <div style="margin-top:6px">
+                  <span class="status ${statusClass(x.status)}">${statusLabel(x.status)}</span>
+                </div>
+              </div>
+            </div>
+          `).join('') + `</div>`;
+        };
+
+        const bugList = (items, emptyText)=> {
+          if(!items.length) return `<div class="empty">${emptyText}</div>`;
+          return `<div class="list">` + items.slice(0, 10).map(x=>`
+            <div class="item">
+              <div>
+                <div class="name">${x.name || '未命名'}</div>
+                <div class="small">${(x.owners && x.owners.length) ? `负责人：${x.owners.join('、')}` : '<span class="muted">未指定负责人</span>'}</div>
+                ${x.note ? `<div class="small muted" style="margin-top:4px">${x.note}</div>` : ''}
+              </div>
+              <div style="text-align:right;min-width:160px">
+                <div class="tags">
+                  <span class="tag">${(x.severity||'').toUpperCase() || 'S?'}</span>
+                  ${platformTags(x.plat)}
+                </div>
+                <div style="margin-top:6px">
+                  <span class="status ${statusClass(x.status)}">${statusLabel(x.status)}</span>
+                </div>
+              </div>
+            </div>
+          `).join('') + `</div>`;
+        };
+
+        const opsList = (items, emptyText)=> {
+          if(!items.length) return `<div class="empty">${emptyText}</div>`;
+          return `<div class="list">` + items.slice(0, 8).map(x=>`
+            <div class="item">
+              <div>
+                <div class="name">${x.name || '未命名'}</div>
+                <div class="small">${x.channel ? `渠道：${x.channel}` : '<span class="muted">未填写渠道</span>'}${x.date ? ` · 时间：${x.date}` : ''}</div>
+                ${x.note ? `<div class="small muted" style="margin-top:4px">${x.note}</div>` : ''}
+              </div>
+              <div style="text-align:right;min-width:160px">
+                <div class="tags">${x.cat ? `<span class="tag">${x.cat}</span>` : ''}</div>
+                <div style="margin-top:6px">
+                  <span class="status ${statusClass(x.status)}">${statusLabel(x.status)}</span>
+                </div>
+              </div>
+            </div>
+          `).join('') + `</div>`;
+        };
+
+        const msList = (items, emptyText)=> {
+          if(!items.length) return `<div class="empty">${emptyText}</div>`;
+          return `<div class="list">` + items.slice(0, 8).map(x=>`
+            <div class="item">
+              <div>
+                <div class="name">${x.title || x.id || '里程碑'}</div>
+                <div class="small">${x.dateFull || x.dateShort || ''}</div>
+                ${x.features ? `<div class="small muted" style="margin-top:4px">${x.features}</div>` : ''}
+              </div>
+              <div style="text-align:right;min-width:160px">
+                <div class="tags">${Array.isArray(x.tags) ? x.tags.map(t=>`<span class="tag">${t}</span>`).join('') : ''}</div>
+                <div style="margin-top:6px">
+                  <span class="status ${statusClass(x.status)}">${(x.status||'').toUpperCase() || '—'}</span>
+                </div>
+              </div>
+            </div>
+          `).join('') + `</div>`;
+        };
+
+        view.innerHTML = `
+          <div class="grid">
+            <div class="card" style="grid-column: span 12;">
+              <div class="row">
+                <div>
+                  <h3>本月目标（v1 占位）</h3>
+                  <div style="font-size:14px;font-weight:900;margin-top:2px">让看板“公开只读、数据可同步、可用于汇报”</div>
+                  <div class="small" style="margin-top:4px">当前数据源：Supabase ` + (updatedAt ? `（更新于 ${fmtTime(updatedAt)}）` : '（使用内置数据）') + `</div>
+                </div>
+                <div class="small">
+                  <span class="muted">下一步：</span>先把 Overview 信息架构跑通，再逐个 Tab 对齐设计文档
+                </div>
+              </div>
+              <div style="margin-top:12px">${kpiHtml}</div>
+            </div>
+
+            <div style="grid-column: span 12;">
+              <details class="week" open>
+                <summary>
+                  <div>
+                    <div class="wk-title">本周</div>
+                    <div class="wk-sub">以现有数据的 `thisWeek` 标记作为“本周范围”</div>
+                  </div>
+                  <div class="wk-sub">点击折叠/展开</div>
+                </summary>
+                <div class="wk-body">
+                  <div class="grid">
+                    <div class="card" style="grid-column: span 7;">
+                      <h3>本周推进</h3>
+                      ${weekList(c.thisWeek, '本周暂无标记任务。你可以在数据里给任务加上 thisWeek=true。')}
+                    </div>
+                    <div class="card" style="grid-column: span 5;">
+                      <h3>未关闭高优 Bug（S0/S1）</h3>
+                      ${bugList(c.s0s1, '当前没有未关闭的 S0/S1 Bug。')}
+                    </div>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="card" style="grid-column: span 6;">
+              <h3>运营动作（摘要）</h3>
+              ${opsList(c.o, '暂无运营动作数据。')}
+            </div>
+            <div class="card" style="grid-column: span 6;">
+              <h3>里程碑（摘要）</h3>
+              ${msList(c.m, '暂无里程碑数据。')}
+            </div>
+
+            <div class="card" style="grid-column: span 12;">
+              <h3>待规划 Backlog（摘要）</h3>
+              ${weekList(c.bl, '暂无 backlog。')}
+              <div class="footer">
+                <span>提示：当前是“先跑通 UI/信息架构”的 A 路线，后续会按设计文档把数据结构拆成月/周/功能/平台等表。</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
+      function renderPlaceholder(id, title, desc){
+        const view = $('view-'+id);
+        view.innerHTML = `
+          <div class="card">
+            <h3>${title}</h3>
+            <div style="font-size:14px;font-weight:900;margin-top:2px">${desc}</div>
+            <div class="small" style="margin-top:8px">
+              这一页会在下一轮按《看板结构设计文档》补齐。当前你可以先使用 Overview，以及右上角“打开旧版”对照。
+            </div>
+          </div>
+        `;
+      }
+
+      async function loadSnapshot(){
+        const url = `${SUPABASE_URL}/rest/v1/kanban_snapshot?key=eq.${encodeURIComponent(SNAPSHOT_KEY)}&select=data,updated_at`;
+        const res = await fetch(url, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+          }
+        });
+        if(!res.ok) throw new Error(`Supabase fetch failed: ${res.status} ${res.statusText}`);
+        const rows = await res.json();
+        return rows && rows[0] ? rows[0] : null;
+      }
+
+      async function init(){
+        $('legacyBtn').addEventListener('click', ()=> window.open(LEGACY_FILE, '_blank'));
+        renderTabs('overview');
+
+        renderPlaceholder('features', '功能详情', 'v1：即将按“大功能 / 新增功能 / 优化功能”重做');
+        renderPlaceholder('bugs', 'Bug 追踪', 'v1：即将按 S0/S1/S2 分级 + 筛选重做');
+        renderPlaceholder('ops', '运营协同', 'v1：即将按类型分组 + 依赖功能 + 数据洞察重做');
+        renderPlaceholder('archive', '历史归档', 'v1：即将按月 → 版本/里程碑归档重做');
+
+        try{
+          setDbStatus('loading', '连接中…');
+          const row = await loadSnapshot();
+          const data = row && row.data ? row.data : null;
+          const updatedAt = row && row.updated_at ? row.updated_at : null;
+          $('lastUpdated').textContent = fmtTime(updatedAt);
+
+          if(data && typeof data === 'object'){
+            setDbStatus('ok', 'DB已连接（公开只读）');
+            renderOverview(data, updatedAt);
+          }else{
+            setDbStatus('warn', 'DB已连接（数据为空）');
+            renderOverview({}, updatedAt);
+          }
+        }catch(e){
+          console.warn(e);
+          setDbStatus('bad', 'DB连接失败（使用内置）');
+          $('lastUpdated').textContent = '—';
+          // 回退：旧版文件内置数据仍可用
+          $('view-overview').innerHTML = `
+            <div class="card">
+              <h3>总览 Overview</h3>
+              <div style="font-size:14px;font-weight:900;margin-top:2px">当前无法从 Supabase 读取数据</div>
+              <div class="small" style="margin-top:8px">你可以先打开右上角“旧版”确认页面可用；或检查 Supabase 的 RLS/网络。</div>
+              <div class="footer" style="margin-top:10px">
+                <a href="${LEGACY_FILE}">打开旧版看板</a>
+              </div>
+            </div>
+          `;
+        }
+      }
+
+      init();
     </script>
   </body>
 </html>
