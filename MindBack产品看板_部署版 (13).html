@@ -4454,11 +4454,53 @@ let backlog = ${JSON.stringify(backlog, null, 2)};
 }
 
 // ── INIT ──
-loadFromStorage();   // 优先从 localStorage 恢复，没有则用文件内默认数据
-renderTasks();
-renderBugs();
-renderBacklog();
-buildVersionFilters();
+const SUPABASE_URL = 'https://youwcvqibzscimrcumej.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable__IxFWKd1RZG2qnXRKg5uhg_lxIhgDSx';
+
+async function loadFromSupabaseSnapshot(){
+  try{
+    const url = `${SUPABASE_URL}/rest/v1/kanban_snapshot?key=eq.prod&select=data,updated_at`;
+    const res = await fetch(url, {
+      headers: {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      }
+    });
+    if(!res.ok){
+      throw new Error(`Supabase fetch failed: ${res.status} ${res.statusText}`);
+    }
+    const rows = await res.json();
+    const snap = rows && rows[0] && rows[0].data;
+    if(!snap || typeof snap !== 'object'){
+      console.warn('Supabase connected, but snapshot is empty. Falling back to baked-in data.');
+      return false;
+    }
+    if(Array.isArray(snap.tasks))     tasks = snap.tasks;
+    if(Array.isArray(snap.bugs))      bugs = snap.bugs;
+    if(Array.isArray(snap.ops))       ops = snap.ops;
+    if(Array.isArray(snap.milestones))milestones = snap.milestones;
+    if(Array.isArray(snap.people))    people = snap.people;
+    if(Array.isArray(snap.debtItems)) debtItems = snap.debtItems;
+    if(Array.isArray(snap.backlog))   backlog = snap.backlog;
+    return true;
+  }catch(e){
+    console.warn('Supabase snapshot load failed. Falling back to baked-in data.', e);
+    return false;
+  }
+}
+
+async function init(){
+  // localStorage 在导出版被禁用，这里保留调用以兼容非导出版
+  try{ loadFromStorage(); }catch(e){}
+
+  await loadFromSupabaseSnapshot();
+  renderTasks();
+  renderBugs();
+  renderBacklog();
+  buildVersionFilters();
+}
+
+init();
 </script>
 
 
