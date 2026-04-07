@@ -780,17 +780,40 @@
           alert('保存失败：请检查 Supabase RLS 策略是否已配置。');
           return;
         }
-        app.isDirty = false;
-        updateSaveBtn();
-        // 同步 lastUpdated
+        // PostgREST 在“0 行被更新”时也可能返回 200 + []
+        let updatedAt = null;
         try{
           const rows = JSON.parse(text);
-          const updatedAt = rows?.[0]?.updated_at;
-          if(updatedAt){
-            $('lastUpdated').textContent = fmtTime(updatedAt);
-            app.snapshotRow.updated_at = updatedAt;
+          if(!Array.isArray(rows) || rows.length === 0){
+            alert('保存未生效：后端没有更新任何行（通常是 RLS 拒绝或没有匹配到 key=prod）。');
+            console.warn('Save returned empty representation:', text);
+            return;
           }
-        }catch(e){}
+          updatedAt = rows?.[0]?.updated_at || null;
+        }catch(e){
+          alert('保存返回无法解析，建议在 Supabase 表里核对 updated_at 是否变化。');
+          console.warn('Save response parse failed:', e, text);
+          return;
+        }
+
+        // 二次校验：保存后立刻再读一次后端，确保已写入
+        try{
+          const verify = await loadSnapshot();
+          const vAt = verify?.updated_at || null;
+          if(!vAt || (updatedAt && vAt !== updatedAt)){
+            alert('保存后校验失败：后端 updated_at 未按预期更新，请在 Supabase 表里确认。');
+            console.warn('Verify mismatch:', { updatedAt, vAt, verify });
+            return;
+          }
+          app.snapshotRow = verify;
+          app.snapshot = verify?.data || app.snapshot;
+          $('lastUpdated').textContent = fmtTime(vAt);
+          app.isDirty = false;
+          updateSaveBtn();
+        }catch(e){
+          alert('保存成功但校验读取失败：请刷新页面或在 Supabase 表里确认 updated_at。');
+          console.warn('Verify read failed:', e);
+        }
       }
 
       $('adminBtn').addEventListener('click', openAuthModal);
