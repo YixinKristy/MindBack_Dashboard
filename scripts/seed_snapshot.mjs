@@ -17,10 +17,58 @@ function extractBlock(html, start, end) {
   return html.slice(from, e);
 }
 
-function parseJsonValue(src, label) {
-  const trimmed = src.trim();
-  if (!trimmed) throw new Error(`Empty value for ${label}`);
-  return JSON.parse(trimmed);
+function parseFirstJsonValue(src, label) {
+  const s = src.trimStart();
+  if (!s.trim()) throw new Error(`Empty value for ${label}`);
+
+  const first = s[0];
+  if (first !== '[' && first !== '{') {
+    throw new Error(`Unexpected first char for ${label}: ${JSON.stringify(first)}`);
+  }
+
+  const openToClose = { '[': ']', '{': '}' };
+  const stack = [openToClose[first]];
+  let inStr = false;
+  let escaped = false;
+
+  for (let i = 1; i < s.length; i++) {
+    const ch = s[i];
+
+    if (inStr) {
+      if (escaped) {
+        escaped = false;
+        continue;
+      }
+      if (ch === '\\') {
+        escaped = true;
+        continue;
+      }
+      if (ch === '"') {
+        inStr = false;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inStr = true;
+      continue;
+    }
+
+    if (ch === '[') stack.push(']');
+    else if (ch === '{') stack.push('}');
+    else if (ch === ']' || ch === '}') {
+      const expected = stack.pop();
+      if (expected !== ch) {
+        throw new Error(`Mismatched closing bracket for ${label}: expected ${expected}, got ${ch}`);
+      }
+      if (stack.length === 0) {
+        const jsonText = s.slice(0, i + 1);
+        return JSON.parse(jsonText);
+      }
+    }
+  }
+
+  throw new Error(`Unterminated JSON for ${label}`);
 }
 
 async function main() {
@@ -41,13 +89,13 @@ async function main() {
   const backlogSrc = extractBlock(html, 'let backlog =', '/*%%DATA_END%%*/');
 
   const snapshot = {
-    tasks: parseJsonValue(tasksSrc.replace(/^\s*=/, ''), 'tasks'),
-    bugs: parseJsonValue(bugsSrc.replace(/^\s*=/, ''), 'bugs'),
-    milestones: parseJsonValue(milestonesSrc.replace(/^\s*=/, ''), 'milestones'),
-    people: parseJsonValue(peopleSrc.replace(/^\s*=/, ''), 'people'),
-    debtItems: parseJsonValue(debtItemsSrc.replace(/^\s*=/, ''), 'debtItems'),
-    ops: parseJsonValue(opsSrc.replace(/^\s*=/, ''), 'ops'),
-    backlog: parseJsonValue(backlogSrc.replace(/^\s*=/, ''), 'backlog'),
+    tasks: parseFirstJsonValue(tasksSrc.replace(/^\s*=/, ''), 'tasks'),
+    bugs: parseFirstJsonValue(bugsSrc.replace(/^\s*=/, ''), 'bugs'),
+    milestones: parseFirstJsonValue(milestonesSrc.replace(/^\s*=/, ''), 'milestones'),
+    people: parseFirstJsonValue(peopleSrc.replace(/^\s*=/, ''), 'people'),
+    debtItems: parseFirstJsonValue(debtItemsSrc.replace(/^\s*=/, ''), 'debtItems'),
+    ops: parseFirstJsonValue(opsSrc.replace(/^\s*=/, ''), 'ops'),
+    backlog: parseFirstJsonValue(backlogSrc.replace(/^\s*=/, ''), 'backlog'),
   };
 
   const endpoint = `${SUPABASE_URL.replace(/\/$/, '')}/rest/v1/kanban_snapshot?key=eq.${encodeURIComponent(SNAPSHOT_KEY)}`;
