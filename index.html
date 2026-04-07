@@ -299,7 +299,7 @@
                 <div>
                   <h3>本月目标（v1 占位）</h3>
                   <div style="font-size:14px;font-weight:900;margin-top:2px">让看板“公开只读、数据可同步、可用于汇报”</div>
-                  <div class="small" style="margin-top:4px">当前数据源：Supabase ` + (updatedAt ? `（更新于 ${fmtTime(updatedAt)}）` : '（使用内置数据）') + `</div>
+                  <div class="small" style="margin-top:4px">当前数据源：Supabase ${updatedAt ? `（更新于 ${fmtTime(updatedAt)}）` : '（使用内置数据）'}</div>
                 </div>
                 <div class="small">
                   <span class="muted">下一步：</span>先把 Overview 信息架构跑通，再逐个 Tab 对齐设计文档
@@ -313,7 +313,7 @@
                 <summary>
                   <div>
                     <div class="wk-title">本周</div>
-                    <div class="wk-sub">以现有数据的 `thisWeek` 标记作为“本周范围”</div>
+                    <div class="wk-sub">以现有数据的 <code>thisWeek</code> 标记作为“本周范围”</div>
                   </div>
                   <div class="wk-sub">点击折叠/展开</div>
                 </summary>
