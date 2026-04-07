@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MindBack 产品看板</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
       :root{
         --bg:#f2f3f7; --card:#fff; --border:#e4e6ef; --text:#111827; --sub:#6b7280; --muted:#9ca3af;
@@ -28,6 +29,8 @@
       .db-dot{width:6px;height:6px;border-radius:50%;background:#fbbf24}
       .btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.15);color:#fff;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer}
       .btn:hover{background:rgba(255,255,255,.18)}
+      .btn.primary{background:var(--blue2);border-color:rgba(0,0,0,.05);color:#111}
+      .btn.primary:hover{filter:brightness(.98)}
 
       .tabs{background:#fff;border-bottom:1px solid var(--border);position:sticky;top:52px;z-index:9;display:flex;gap:4px;padding:0 20px}
       .tab{padding:12px 14px;border-bottom:2px solid transparent;color:var(--sub);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px}
@@ -73,6 +76,22 @@
 
       .empty{border:1px dashed var(--border);border-radius:14px;padding:14px;color:var(--sub);background:#fafbff}
       .footer{margin-top:18px;font-size:11px;color:var(--sub);display:flex;gap:10px;flex-wrap:wrap}
+
+      .inline-edit{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap}
+      .edit-input{width:min(680px, 100%);border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;background:#fff;outline:none}
+      .edit-input:focus{border-color:rgba(120,170,250,.9);box-shadow:0 0 0 3px rgba(120,170,250,.18)}
+      .edit-area{width:100%;min-height:72px;resize:vertical;border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;background:#fff;outline:none}
+      .edit-area:focus{border-color:rgba(120,170,250,.9);box-shadow:0 0 0 3px rgba(120,170,250,.18)}
+      .hint{font-size:11px;color:var(--sub)}
+
+      .modal{position:fixed;inset:0;background:rgba(17,24,39,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50}
+      .modal.open{display:flex}
+      .modal-card{width:min(520px, 100%);background:#fff;border-radius:14px;border:1px solid var(--border);padding:14px 16px}
+      .modal-title{font-weight:900;font-size:14px;margin:2px 0 10px}
+      .form-row{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+      .label{font-size:11px;color:var(--sub)}
+      .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px}
+      .err{color:#991b1b;background:#fee2e2;border:1px solid #fecaca;border-radius:10px;padding:8px 10px;font-size:12px;margin-top:10px;display:none}
     </style>
   </head>
   <body>
@@ -90,6 +109,8 @@
           <span class="muted">最后更新</span>
           <span id="lastUpdated">—</span>
         </div>
+        <button class="btn" id="adminBtn" type="button">管理员登录</button>
+        <button class="btn primary" id="saveBtn" type="button" style="display:none">保存更改</button>
         <button class="btn" id="legacyBtn" type="button">打开旧版</button>
       </div>
     </div>
@@ -104,11 +125,32 @@
       <div class="view" id="view-archive"></div>
     </div>
 
+    <div class="modal" id="authModal" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <div class="modal-title" id="authTitle">管理员登录</div>
+        <div class="hint">登录后可编辑月目标/周目标并保存到 Supabase。公开访客仍然只读。</div>
+        <div class="form-row">
+          <div class="label">邮箱</div>
+          <input class="edit-input" id="authEmail" autocomplete="username" placeholder="you@example.com" />
+        </div>
+        <div class="form-row">
+          <div class="label">密码</div>
+          <input class="edit-input" id="authPassword" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <div class="err" id="authErr"></div>
+        <div class="form-actions">
+          <button class="btn" id="authCancel" type="button">取消</button>
+          <button class="btn primary" id="authSubmit" type="button">登录</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       // ── Supabase 只读连接（公开可用：publishable/anon key） ──
       const SUPABASE_URL = 'https://youwcvqibzscimrcumej.supabase.co';
       const SUPABASE_ANON_KEY = 'sb_publishable__IxFWKd1RZG2qnXRKg5uhg_lxIhgDSx';
       const SNAPSHOT_KEY = 'prod';
+      const ADMIN_UID = '618d276a-fbba-4c40-a261-6567c00b0b5f';
 
       const LEGACY_FILE = 'MindBack产品看板_部署版%20(13).html';
 
@@ -202,7 +244,24 @@
 
       function renderOverview(state, updatedAt){
         const view = $('view-overview');
-        const c = groupCounts(state);
+        // v2 优先；v1 会被 normalizeSnapshot 包一层
+        const v2 = normalizeSnapshot(state);
+        const c = groupCounts(v2.legacy || {});
+
+        const monthTitle = v2.month?.title || '';
+        const monthProgress = Number.isFinite(v2.month?.progress) ? v2.month.progress : null;
+
+        const isAdmin = app.isAdmin;
+        const monthTitleView = isAdmin
+          ? `<div class="inline-edit">
+               <input class="edit-input" id="monthTitleInput" value="${escapeHtml(monthTitle)}" placeholder="一句话月目标（可编辑）" />
+               <span class="hint">示例：本月聚焦产品功能 + 运营节奏</span>
+             </div>`
+          : `<div style="font-size:14px;font-weight:900;margin-top:2px">${monthTitle ? escapeHtml(monthTitle) : '（月目标待填写）'}</div>`;
+
+        const progressView = (monthProgress===null)
+          ? `<div class="small muted">月度进度：未填写</div>`
+          : `<div class="small">月度进度：<b>${monthProgress}%</b></div>`;
 
         const kpiHtml = `
           <div class="kpis">
@@ -292,45 +351,26 @@
           `).join('') + `</div>`;
         };
 
+        const weeksHtml = renderWeeks(v2);
+
         view.innerHTML = `
           <div class="grid">
             <div class="card" style="grid-column: span 12;">
               <div class="row">
                 <div>
-                  <h3>本月目标（v1 占位）</h3>
-                  <div style="font-size:14px;font-weight:900;margin-top:2px">让看板“公开只读、数据可同步、可用于汇报”</div>
-                  <div class="small" style="margin-top:4px">当前数据源：Supabase ${updatedAt ? `（更新于 ${fmtTime(updatedAt)}）` : '（使用内置数据）'}</div>
+                  <h3>本月目标</h3>
+                  ${monthTitleView}
+                  <div class="small" style="margin-top:6px">${progressView}</div>
+                  <div class="small" style="margin-top:4px">数据源：Supabase ${updatedAt ? `（更新于 ${fmtTime(updatedAt)}）` : '（使用内置数据）'}</div>
                 </div>
                 <div class="small">
-                  <span class="muted">下一步：</span>先把 Overview 信息架构跑通，再逐个 Tab 对齐设计文档
+                  <span class="muted">模式：</span>${isAdmin ? '管理员可编辑（未保存）' : '公开只读'}
                 </div>
               </div>
               <div style="margin-top:12px">${kpiHtml}</div>
             </div>
 
-            <div style="grid-column: span 12;">
-              <details class="week" open>
-                <summary>
-                  <div>
-                    <div class="wk-title">本周</div>
-                    <div class="wk-sub">以现有数据的 <code>thisWeek</code> 标记作为“本周范围”</div>
-                  </div>
-                  <div class="wk-sub">点击折叠/展开</div>
-                </summary>
-                <div class="wk-body">
-                  <div class="grid">
-                    <div class="card" style="grid-column: span 7;">
-                      <h3>本周推进</h3>
-                      ${weekList(c.thisWeek, '本周暂无标记任务。你可以在数据里给任务加上 thisWeek=true。')}
-                    </div>
-                    <div class="card" style="grid-column: span 5;">
-                      <h3>未关闭高优 Bug（S0/S1）</h3>
-                      ${bugList(c.s0s1, '当前没有未关闭的 S0/S1 Bug。')}
-                    </div>
-                  </div>
-                </div>
-              </details>
-            </div>
+            <div style="grid-column: span 12;">${weeksHtml}</div>
 
             <div class="card" style="grid-column: span 6;">
               <h3>运营动作（摘要）</h3>
@@ -350,6 +390,17 @@
             </div>
           </div>
         `;
+
+        if(isAdmin){
+          const input = $('monthTitleInput');
+          if(input){
+            input.addEventListener('input', ()=>{
+              app.draft.month.title = input.value.trim();
+              app.isDirty = true;
+              updateSaveBtn();
+            });
+          }
+        }
       }
 
       function renderPlaceholder(id, title, desc){
@@ -396,10 +447,16 @@
 
           if(data && typeof data === 'object'){
             setDbStatus('ok', 'DB已连接（公开只读）');
-            renderOverview(data, updatedAt);
+            app.snapshotRow = row;
+            app.snapshot = data;
+            app.draft = deepClone(normalizeSnapshot(data));
+            renderOverview(app.draft, updatedAt);
           }else{
             setDbStatus('warn', 'DB已连接（数据为空）');
-            renderOverview({}, updatedAt);
+            app.snapshotRow = row;
+            app.snapshot = {};
+            app.draft = deepClone(normalizeSnapshot({}));
+            renderOverview(app.draft, updatedAt);
           }
         }catch(e){
           console.warn(e);
@@ -419,7 +476,330 @@
         }
       }
 
-      init();
+      // ── App state ──
+      const app = {
+        supabase: window.supabase?.createClient
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          : null,
+        isAdmin: false,
+        isDirty: false,
+        snapshotRow: null,
+        snapshot: null,
+        draft: null,
+      };
+
+      function escapeHtml(s){
+        return String(s ?? '')
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#39;');
+      }
+
+      function deepClone(obj){
+        return obj ? JSON.parse(JSON.stringify(obj)) : obj;
+      }
+
+      function normalizeSnapshot(data){
+        // v2 shape:
+        // {version:2, month:{title,progress}, weeks:[...], legacy:{tasks,bugs,ops,milestones,people,backlog,debtItems}}
+        if(data && data.version === 2) return data;
+
+        const legacy = {
+          tasks: Array.isArray(data?.tasks) ? data.tasks : [],
+          bugs: Array.isArray(data?.bugs) ? data.bugs : [],
+          ops: Array.isArray(data?.ops) ? data.ops : [],
+          milestones: Array.isArray(data?.milestones) ? data.milestones : [],
+          people: Array.isArray(data?.people) ? data.people : [],
+          backlog: Array.isArray(data?.backlog) ? data.backlog : [],
+          debtItems: Array.isArray(data?.debtItems) ? data.debtItems : [],
+        };
+
+        return {
+          version: 2,
+          month: { title: '', progress: null },
+          weeks: buildDefaultWeeks(),
+          legacy,
+          // inbox 用于后续你在 UI 里完成“重新分类”
+          inbox: {
+            items: legacy.tasks.map(t=>({ kind: t.type==='bug' ? 'bug' : 'task', refId: t.id })),
+          },
+          features: {
+            big: [{ id:'big_site', name:'站点', platform: { ios:{progress:null,stage:'dev'}, android:{progress:null,stage:'dev'}, web:{progress:null,stage:'dev'}, backend:{progress:null,stage:'dev'}, ai:{progress:null,stage:'dev'} }, links:{ new:[], opt:[], bugs:[], ops:[] }, tasks: [] }],
+            new: [],
+            opt: [],
+          }
+        };
+      }
+
+      function startOfWeekMonday(d){
+        const x = new Date(d);
+        const day = x.getDay(); // 0 Sun
+        const diff = (day === 0 ? -6 : 1 - day);
+        x.setDate(x.getDate() + diff);
+        x.setHours(0,0,0,0);
+        return x;
+      }
+
+      function fmtRange(a,b){
+        const pad = (n)=> String(n).padStart(2,'0');
+        return `${a.getFullYear()}/${pad(a.getMonth()+1)}/${pad(a.getDate())}–${pad(b.getMonth()+1)}/${pad(b.getDate())}`;
+      }
+
+      function buildDefaultWeeks(){
+        // 本月 + 近三个月：每个月取覆盖该月的周（周一-周日）
+        const now = new Date();
+        const months = [];
+        for(let i=0;i<4;i++){
+          const m = new Date(now.getFullYear(), now.getMonth()-i, 1);
+          months.push({ y:m.getFullYear(), m:m.getMonth() });
+        }
+
+        const out = [];
+        months.forEach(({y,m})=>{
+          const first = new Date(y,m,1);
+          const last = new Date(y,m+1,0);
+          let cur = startOfWeekMonday(first);
+          while(cur <= last){
+            const end = new Date(cur); end.setDate(end.getDate()+6);
+            out.push({
+              id: `${y}-${String(m+1).padStart(2,'0')}-${fmtRange(cur,end)}`,
+              month: `${y}/${String(m+1).padStart(2,'0')}`,
+              range: fmtRange(cur,end),
+              goal: '',
+              criteria: '',
+              bigFeatureIds: [],
+              newFeatureIds: [],
+              optFeatureIds: [],
+              bugIds: [],
+              opsIds: [],
+              insightIds: [],
+            });
+            cur = new Date(cur); cur.setDate(cur.getDate()+7);
+          }
+        });
+
+        // 按时间倒序（本月在前），但同月内按周正序更符合阅读
+        const byMonth = new Map();
+        out.forEach(w=>{
+          if(!byMonth.has(w.month)) byMonth.set(w.month, []);
+          byMonth.get(w.month).push(w);
+        });
+        const monthOrder = months.map(x=>`${x.y}/${String(x.m+1).padStart(2,'0')}`);
+        const final = [];
+        monthOrder.forEach(mk=>{
+          const arr = byMonth.get(mk) || [];
+          arr.sort((a,b)=>a.range.localeCompare(b.range));
+          final.push(...arr);
+        });
+        return final;
+      }
+
+      function currentWeekId(weeks){
+        const now = new Date();
+        const monday = startOfWeekMonday(now);
+        const end = new Date(monday); end.setDate(end.getDate()+6);
+        const r = fmtRange(monday,end);
+        const ym = `${monday.getFullYear()}/${String(monday.getMonth()+1).padStart(2,'0')}`;
+        const found = weeks.find(w=>w.month===ym && w.range===r);
+        return found ? found.id : null;
+      }
+
+      function renderWeeks(v2){
+        const weeks = Array.isArray(v2.weeks) ? v2.weeks : [];
+        const curId = currentWeekId(weeks);
+        const curMonth = curId ? (weeks.find(w=>w.id===curId)?.month) : null;
+
+        // 结构严格按文档：按周纵向排列；当月本周展开，其余折叠
+        return weeks.map(w=>{
+          const open = (w.id===curId && w.month===curMonth) ? ' open' : '';
+          const isAdmin = app.isAdmin;
+          const goalView = isAdmin
+            ? `<textarea class="edit-area" data-week-goal="${escapeHtml(w.id)}" placeholder="本周目标描述">${escapeHtml(w.goal||'')}</textarea>`
+            : `<div class="small" style="margin-top:6px">${w.goal ? escapeHtml(w.goal) : '<span class=\"muted\">（目标待填写）</span>'}</div>`;
+          const critView = isAdmin
+            ? `<textarea class="edit-area" data-week-criteria="${escapeHtml(w.id)}" placeholder="验收标准">${escapeHtml(w.criteria||'')}</textarea>`
+            : `<div class="small" style="margin-top:6px">${w.criteria ? '验收：'+escapeHtml(w.criteria) : '<span class=\"muted\">（验收标准待填写）</span>'}</div>`;
+
+          return `
+            <details class="week"${open}>
+              <summary>
+                <div>
+                  <div class="wk-title">${escapeHtml(w.month)} · ${escapeHtml(w.range)}</div>
+                  <div class="wk-sub">${w.id===curId ? '本周（默认展开）' : '点击展开/折叠'}</div>
+                </div>
+                <div class="wk-sub">整体进度：—</div>
+              </summary>
+              <div class="wk-body">
+                <div class="card" style="border-radius:12px">
+                  <h3>本周目标</h3>
+                  ${goalView}
+                  <div style="margin-top:10px"></div>
+                  <h3>验收标准</h3>
+                  ${critView}
+                </div>
+
+                <div class="grid" style="margin-top:12px">
+                  <div class="card" style="grid-column: span 12;">
+                    <h3>大功能</h3>
+                    <div class="empty">v1：这里会渲染“大功能卡（状态管道 + 五端进度 + 关联新增/优化）”。当前请先在后续的“分类/关联”流程把条目挂到大功能上。</div>
+                  </div>
+
+                  <div class="card" style="grid-column: span 12;">
+                    <h3>新增功能</h3>
+                    <div class="empty">v1：将以胶囊标签展示，每个功能对齐平台状态。</div>
+                  </div>
+
+                  <div class="card" style="grid-column: span 12;">
+                    <h3>优化功能</h3>
+                    <div class="empty">v1：将以胶囊标签展示，每个功能对齐平台状态。</div>
+                  </div>
+
+                  <div class="card" style="grid-column: span 12;">
+                    <h3>Bug 修复</h3>
+                    <div class="empty">v1：将显示本周关联 Bug（S0/S1 重点）。</div>
+                  </div>
+
+                  <div class="card" style="grid-column: span 12;">
+                    <h3>运营动作</h3>
+                    <div class="empty">v1：将显示本周运营动作（按类型）。</div>
+                  </div>
+
+                  <div class="card" style="grid-column: span 12;">
+                    <h3>数据分析节点</h3>
+                    <div class="empty">v1：将显示触发时机 / 观察指标 / 决策依据。</div>
+                  </div>
+                </div>
+              </div>
+            </details>
+          `;
+        }).join('<div style="height:10px"></div>');
+      }
+
+      function updateSaveBtn(){
+        const btn = $('saveBtn');
+        if(!btn) return;
+        btn.style.display = app.isAdmin ? 'inline-flex' : 'none';
+        btn.disabled = !app.isDirty;
+        btn.textContent = app.isDirty ? '保存更改' : '已保存';
+      }
+
+      function openAuthModal(){
+        $('authModal').classList.add('open');
+        $('authErr').style.display = 'none';
+      }
+      function closeAuthModal(){
+        $('authModal').classList.remove('open');
+        $('authErr').style.display = 'none';
+      }
+
+      async function signIn(){
+        const email = $('authEmail').value.trim();
+        const password = $('authPassword').value;
+        const errBox = $('authErr');
+        errBox.style.display = 'none';
+        if(!email || !password){
+          errBox.textContent = '请填写邮箱和密码。';
+          errBox.style.display = 'block';
+          return;
+        }
+        if(!app.supabase){
+          errBox.textContent = 'Supabase SDK 未加载，请刷新页面重试。';
+          errBox.style.display = 'block';
+          return;
+        }
+        const { data, error } = await app.supabase.auth.signInWithPassword({ email, password });
+        if(error){
+          errBox.textContent = error.message || '登录失败';
+          errBox.style.display = 'block';
+          return;
+        }
+        const uid = data?.user?.id;
+        app.isAdmin = (uid === ADMIN_UID);
+        if(!app.isAdmin){
+          errBox.textContent = '登录成功，但该账号没有管理员写入权限。';
+          errBox.style.display = 'block';
+          await app.supabase.auth.signOut();
+          return;
+        }
+        closeAuthModal();
+        $('adminBtn').textContent = '已登录';
+        updateSaveBtn();
+        // 重新渲染，让输入框出现
+        renderOverview(app.draft, app.snapshotRow?.updated_at);
+        bindWeekEdits();
+      }
+
+      function bindWeekEdits(){
+        if(!app.isAdmin) return;
+        document.querySelectorAll('[data-week-goal]').forEach(el=>{
+          el.addEventListener('input', ()=>{
+            const id = el.getAttribute('data-week-goal');
+            const w = app.draft.weeks.find(x=>x.id===id);
+            if(w){ w.goal = el.value; app.isDirty = true; updateSaveBtn(); }
+          });
+        });
+        document.querySelectorAll('[data-week-criteria]').forEach(el=>{
+          el.addEventListener('input', ()=>{
+            const id = el.getAttribute('data-week-criteria');
+            const w = app.draft.weeks.find(x=>x.id===id);
+            if(w){ w.criteria = el.value; app.isDirty = true; updateSaveBtn(); }
+          });
+        });
+      }
+
+      async function saveSnapshot(){
+        if(!app.isAdmin || !app.isDirty) return;
+        if(!app.supabase){
+          alert('Supabase SDK 未加载，请刷新页面重试。');
+          return;
+        }
+        const { data: sessionData } = await app.supabase.auth.getSession();
+        const accessToken = sessionData?.session?.access_token;
+        if(!accessToken){
+          alert('未检测到登录状态，请重新登录。');
+          return;
+        }
+
+        // 写回：更新 kanban_snapshot(key=prod) 的 data 字段
+        const url = `${SUPABASE_URL}/rest/v1/kanban_snapshot?key=eq.${encodeURIComponent(SNAPSHOT_KEY)}`;
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: 'Bearer ' + accessToken,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify({ data: app.draft }),
+        });
+        const text = await res.text();
+        if(!res.ok){
+          console.warn(text);
+          alert('保存失败：请检查 Supabase RLS 策略是否已配置。');
+          return;
+        }
+        app.isDirty = false;
+        updateSaveBtn();
+        // 同步 lastUpdated
+        try{
+          const rows = JSON.parse(text);
+          const updatedAt = rows?.[0]?.updated_at;
+          if(updatedAt){
+            $('lastUpdated').textContent = fmtTime(updatedAt);
+            app.snapshotRow.updated_at = updatedAt;
+          }
+        }catch(e){}
+      }
+
+      $('adminBtn').addEventListener('click', openAuthModal);
+      $('authCancel').addEventListener('click', closeAuthModal);
+      $('authSubmit').addEventListener('click', signIn);
+      $('authModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeAuthModal(); });
+      $('saveBtn').addEventListener('click', saveSnapshot);
+
+      init().then(()=>{ bindWeekEdits(); updateSaveBtn(); });
     </script>
   </body>
 </html>
