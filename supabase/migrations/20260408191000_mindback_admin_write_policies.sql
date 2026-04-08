@@ -9,58 +9,79 @@ DECLARE
 BEGIN
   -- tasks
   DROP POLICY IF EXISTS "admin write" ON public.tasks;
-  CREATE POLICY "admin write" ON public.tasks
-    FOR ALL
-    TO authenticated
-    USING (auth.uid() = admin_uid)
-    WITH CHECK (auth.uid() = admin_uid);
+  EXECUTE format(
+    'CREATE POLICY "admin write" ON public.tasks
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = %L::uuid)
+      WITH CHECK (auth.uid() = %L::uuid);',
+    admin_uid, admin_uid
+  );
 
   -- bugs
   DROP POLICY IF EXISTS "admin write" ON public.bugs;
-  CREATE POLICY "admin write" ON public.bugs
-    FOR ALL
-    TO authenticated
-    USING (auth.uid() = admin_uid)
-    WITH CHECK (auth.uid() = admin_uid);
+  EXECUTE format(
+    'CREATE POLICY "admin write" ON public.bugs
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = %L::uuid)
+      WITH CHECK (auth.uid() = %L::uuid);',
+    admin_uid, admin_uid
+  );
 
   -- ops_actions
   DROP POLICY IF EXISTS "admin write" ON public.ops_actions;
-  CREATE POLICY "admin write" ON public.ops_actions
-    FOR ALL
-    TO authenticated
-    USING (auth.uid() = admin_uid)
-    WITH CHECK (auth.uid() = admin_uid);
+  EXECUTE format(
+    'CREATE POLICY "admin write" ON public.ops_actions
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = %L::uuid)
+      WITH CHECK (auth.uid() = %L::uuid);',
+    admin_uid, admin_uid
+  );
 
   -- backlog
   DROP POLICY IF EXISTS "admin write" ON public.backlog;
-  CREATE POLICY "admin write" ON public.backlog
-    FOR ALL
-    TO authenticated
-    USING (auth.uid() = admin_uid)
-    WITH CHECK (auth.uid() = admin_uid);
+  EXECUTE format(
+    'CREATE POLICY "admin write" ON public.backlog
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = %L::uuid)
+      WITH CHECK (auth.uid() = %L::uuid);',
+    admin_uid, admin_uid
+  );
 
   -- versions（允许切状态/改备注）
   DROP POLICY IF EXISTS "admin write" ON public.versions;
-  CREATE POLICY "admin write" ON public.versions
-    FOR ALL
-    TO authenticated
-    USING (auth.uid() = admin_uid)
-    WITH CHECK (auth.uid() = admin_uid);
+  EXECUTE format(
+    'CREATE POLICY "admin write" ON public.versions
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = %L::uuid)
+      WITH CHECK (auth.uid() = %L::uuid);',
+    admin_uid, admin_uid
+  );
 
   -- milestones（允许切状态/写延期说明）
   DROP POLICY IF EXISTS "admin write" ON public.milestones;
-  CREATE POLICY "admin write" ON public.milestones
-    FOR ALL
-    TO authenticated
-    USING (auth.uid() = admin_uid)
-    WITH CHECK (auth.uid() = admin_uid);
+  EXECUTE format(
+    'CREATE POLICY "admin write" ON public.milestones
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = %L::uuid)
+      WITH CHECK (auth.uid() = %L::uuid);',
+    admin_uid, admin_uid
+  );
 
   -- board_overview（允许改月目标/KPI/预告）
   DROP POLICY IF EXISTS "admin write" ON public.board_overview;
-  CREATE POLICY "admin write" ON public.board_overview
-    FOR ALL
-    TO authenticated
-    USING (auth.uid() = admin_uid)
-    WITH CHECK (auth.uid() = admin_uid);
+  EXECUTE format(
+    'CREATE POLICY "admin write" ON public.board_overview
+      FOR ALL
+      TO authenticated
+      USING (auth.uid() = %L::uuid)
+      WITH CHECK (auth.uid() = %L::uuid);',
+    admin_uid, admin_uid
+  );
 END $$;
 
