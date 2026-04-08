@@ -976,7 +976,8 @@
         versionsPlatform: 'ios',
         backlogPhase: null,
         drawer: { open:false, kind:null, row:null },
-        localOnly: true, // 默认：只在前端生效，不写回后端
+        localOnly: false, // 写回后端（失败则进入待同步队列，前端仍保持变更）
+        syncQueue: [],    // { op:'patch'|'insert'|'delete', table, idField, idValue, patch|row, tempId? }
       };
 
       const TABS = [
@@ -998,6 +999,42 @@
         toast._t = setTimeout(()=>{ el.className = 'toast'; }, 2200);
       }
 
+      function queueKey(){
+        return 'mindback_dashboard_sync_queue_v1';
+      }
+
+      function loadQueue(){
+        try{
+          const raw = localStorage.getItem(queueKey());
+          if(!raw) return [];
+          const data = JSON.parse(raw);
+          return Array.isArray(data) ? data : [];
+        }catch(_e){
+          return [];
+        }
+      }
+
+      function saveQueue(){
+        try{
+          localStorage.setItem(queueKey(), JSON.stringify(app.syncQueue || []));
+        }catch(_e){}
+      }
+
+      function enqueue(op){
+        app.syncQueue = app.syncQueue || [];
+        app.syncQueue.push({ ...op, ts: Date.now(), tries: (op.tries || 0) });
+        saveQueue();
+        renderHeader();
+      }
+
+      function dequeueFirst(){
+        if(!app.syncQueue || app.syncQueue.length===0) return null;
+        const op = app.syncQueue.shift();
+        saveQueue();
+        renderHeader();
+        return op;
+      }
+
       function draftKey(){
         // 按环境固定一个 key，避免与其它页面冲突
         return 'mindback_dashboard_local_draft_v1';
@@ -1015,7 +1052,7 @@
       }
 
       function saveLocalDraft(){
-        if(!app.localOnly) return;
+        // 始终保存本地草稿：用于“前端先生效 + 后端同步中”的重放
         try{
           localStorage.setItem(draftKey(), JSON.stringify({ board: app.board, ts: Date.now() }));
         }catch(_e){}
@@ -1062,12 +1099,8 @@
       }
 
       async function patchById(table, idField, idValue, patch){
-        if(app.localOnly){
-          // 本地草稿模式：不写后端
-          return [{ [idField]: idValue, ...patch }];
-        }
         if(!app.accessToken){
-          toast('warn', '请先登录管理员以写入');
+          toast('warn', '未登录：变更已保留，待登录后同步');
           throw new Error('not_authenticated');
         }
         const qs = `${encodeURIComponent(idField)}=eq.${encodeURIComponent(String(idValue))}`;
@@ -1080,13 +1113,8 @@
       }
 
       async function insertRow(table, row){
-        if(app.localOnly){
-          // 本地草稿模式：生成临时负 id，直接落到内存
-          const tmpId = -Math.floor(Math.random() * 1e9);
-          return [{ id: tmpId, ...row }];
-        }
         if(!app.accessToken){
-          toast('warn', '请先登录管理员以写入');
+          toast('warn', '未登录：新增已保留，待登录后同步');
           throw new Error('not_authenticated');
         }
         const path = `/rest/v1/${encodeURIComponent(table)}`;
@@ -1098,11 +1126,8 @@
       }
 
       async function deleteById(table, idField, idValue){
-        if(app.localOnly){
-          return [{ [idField]: idValue }];
-        }
         if(!app.accessToken){
-          toast('warn', '请先登录管理员以写入');
+          toast('warn', '未登录：删除已保留，待登录后同步');
           throw new Error('not_authenticated');
         }
         const qs = `${encodeURIComponent(idField)}=eq.${encodeURIComponent(String(idValue))}`;
@@ -1222,9 +1247,85 @@
           badge.textContent = `${p.name || '阶段'}·${p.theme || ''}`.replace(/\s*·\s*$/,'');
         }
         const adminBtn = $('adminBtn');
-        if(adminBtn){
-          adminBtn.textContent = app.localOnly ? '本地草稿 ✓' : (app.accessToken ? '已登录 ✓' : '管理员登录');
+        if(adminBtn) adminBtn.textContent = app.accessToken ? '已登录 ✓' : '管理员登录';
+
+        const refreshBtn = $('refreshBtn');
+        if(refreshBtn){
+          const n = (app.syncQueue || []).length;
+          refreshBtn.textContent = n > 0 ? `同步(${n})` : '刷新';
         }
+      }
+
+      async function syncNow(){
+        if(!app.syncQueue || app.syncQueue.length===0){
+          await refreshRemote();
+          return;
+        }
+        if(!app.accessToken){
+          toast('warn', '请先登录管理员再同步');
+          openLogin();
+          return;
+        }
+        let processed = 0;
+        while(app.syncQueue.length > 0){
+          const op = app.syncQueue[0];
+          try{
+            if(op.op === 'patch'){
+              await patchById(op.table, op.idField, op.idValue, op.patch);
+              app.syncQueue.shift();
+            }else if(op.op === 'delete'){
+              await deleteById(op.table, op.idField, op.idValue);
+              app.syncQueue.shift();
+            }else if(op.op === 'insert'){
+              const rows = await insertRow(op.table, op.row);
+              const created = Array.isArray(rows) ? rows[0] : null;
+              if(created && typeof created.id !== 'undefined' && op.tempId){
+                // 替换临时 id 为真实 id
+                replaceTempId(op.table, op.tempId, created.id);
+              }
+              app.syncQueue.shift();
+            }else{
+              // unknown op, drop
+              app.syncQueue.shift();
+            }
+            processed += 1;
+            saveQueue();
+          }catch(e){
+            console.warn('sync failed', op, e);
+            // 失败先停，避免狂刷
+            op.tries = (op.tries || 0) + 1;
+            op.lastError = e?.message || String(e);
+            saveQueue();
+            toast('bad', '同步失败：检查 RLS/网络');
+            break;
+          }
+        }
+        renderHeader();
+        saveLocalDraft();
+        if(processed > 0 && app.syncQueue.length === 0){
+          toast('ok', '已全部同步');
+        }
+      }
+
+      function replaceTempId(table, tempId, realId){
+        // table -> listName mapping
+        const kind = table === 'tasks' ? 'task'
+          : table === 'bugs' ? 'bug'
+          : table === 'ops_actions' ? 'ops'
+          : table === 'backlog' ? 'backlog'
+          : null;
+        if(!kind) return;
+        const listName = kind==='task' ? 'tasks' : kind==='bug' ? 'bugs' : kind==='ops' ? 'ops' : 'backlog';
+        const list = app.board?.[listName] || [];
+        const idx = list.findIndex(x=> x && String(x.id) === String(tempId));
+        if(idx >= 0){
+          list[idx] = { ...list[idx], id: realId };
+        }
+      }
+
+      async function refreshRemote(){
+        app.board = await loadBoard();
+        render();
       }
 
       function render(){
@@ -1467,26 +1568,26 @@
           }
 
           await patchById(kindToTable(kind), 'id', row.id, patch);
-          toast('ok', app.localOnly ? '已在本地保存（不影响后端）' : '已保存');
+          toast('ok', '已保存');
           saveLocalDraft();
-          if(!app.localOnly) await refresh();
+          await refreshRemote();
           closeDrawer();
         }catch(e){
           console.warn(e);
-          // 本地草稿模式不回滚；远程模式才回滚
-          if(!app.localOnly){
-            if(before) applyLocal(kind, row.id, before);
-            render();
+          // 保持前端变更不回滚，进入待同步队列
+          if(before){
+            // 不回滚，只是记录到队列
           }
-          if(app.localOnly){
-            toast('ok', '已在本地保存（不影响后端）');
-            saveLocalDraft();
-            closeDrawer();
-            return;
+          enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue: row.id, patch });
+          saveLocalDraft();
+          if(String(e.message||'').includes('not_authenticated')){
+            toast('warn', '未登录：已在前端生效，待登录后同步');
+          }else if(e && (e.status===401 || e.status===403)){
+            toast('warn', 'RLS 未放开：已在前端生效，待修复后同步');
+          }else{
+            toast('warn', '网络/接口失败：已在前端生效，待同步');
           }
-          if(e && (e.status===401 || e.status===403)) toast('bad', '保存失败：RLS/未授权');
-          else if(String(e.message||'').includes('not_authenticated')) toast('warn', '请先登录管理员以写入');
-          else toast('bad', '保存失败');
+          closeDrawer();
         }
       }
 
@@ -1496,22 +1597,18 @@
         if(!confirm('确认删除？此操作不可恢复。')) return;
         try{
           await deleteById(kindToTable(kind), 'id', row.id);
-          // 本地删除：直接从内存移除
-          if(app.localOnly){
-            removeLocal(kind, row.id);
-            render();
-            toast('ok', '已在本地删除（不影响后端）');
-            saveLocalDraft();
-            closeDrawer();
-            return;
-          }
           toast('ok', '已删除');
-          await refresh();
+          await refreshRemote();
           closeDrawer();
         }catch(e){
           console.warn(e);
-          if(e && (e.status===401 || e.status===403)) toast('bad', '删除失败：RLS/未授权');
-          else toast('bad', '删除失败');
+          // 前端先删掉，后端进入待同步
+          removeLocal(kind, row.id);
+          render();
+          enqueue({ op:'delete', table: kindToTable(kind), idField:'id', idValue: row.id });
+          saveLocalDraft();
+          toast('warn', '已在前端删除，待同步后端');
+          closeDrawer();
         }
       }
 
@@ -1560,77 +1657,94 @@
           if(!app.localOnly) await refresh();
         }catch(e){
           console.warn(e);
-          if(!app.localOnly){
-            applyLocal(kind, row.id, before);
-            render();
-            if(e && (e.status===401 || e.status===403)) toast('bad', '更新失败：RLS/未授权');
-            else if(String(e.message||'').includes('not_authenticated')) toast('warn', '请先登录管理员以写入');
-            else toast('bad','更新失败');
-            return;
-          }
-          // 本地草稿模式：保持变更不回滚
-          toast('ok', '已在本地更新（不影响后端）');
+          // 保持前端变更不回滚，进入待同步队列
+          enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue: row.id, patch: { status: (kind==='milestone' ? taskStatusToMsStatus(statusCycle(msStatusToTaskStatus(before.status))) : (kind==='version' ? versionStatusCycle(before.status) : statusCycle(before.status))) } });
           saveLocalDraft();
+          toast('warn', '已在前端更新，待同步后端');
         }
       }
 
       async function quickAdd(kind){
         try{
           if(kind==='task'){
-            const rows = await insertRow('tasks', { name:'新任务', status:'ns', priority:'p2', this_week:true, is_focus:false, due_date:'', module:'功能开发', note:'' });
-            if(app.localOnly){
-              app.board.tasks = app.board.tasks || [];
-              app.board.tasks.unshift(rows[0]);
-              render();
-              toast('ok','已在本地新增（不影响后端）');
+            const row = { name:'新任务', status:'ns', priority:'p2', this_week:true, is_focus:false, due_date:'', module:'功能开发', note:'' };
+            const tmpId = -Math.floor(Math.random() * 1e9);
+            app.board.tasks = app.board.tasks || [];
+            app.board.tasks.unshift({ id: tmpId, ...row });
+            render();
+            saveLocalDraft();
+            try{
+              const rows = await insertRow('tasks', row);
+              const created = rows?.[0];
+              if(created?.id) replaceTempId('tasks', tmpId, created.id);
+              toast('ok','已新增');
               saveLocalDraft();
-              return;
+            }catch(e){
+              console.warn(e);
+              enqueue({ op:'insert', table:'tasks', row, tempId: tmpId });
+              toast('warn', '已在前端新增，待同步后端');
             }
-            toast('ok','已新增');
-            await refresh();
             return;
           }
           if(kind==='bug'){
-            const rows = await insertRow('bugs', { name:'新 Bug', status:'ns', severity:'s1', is_focus:false, due_date:'', module:'Bug', note:'' });
-            if(app.localOnly){
-              app.board.bugs = app.board.bugs || [];
-              app.board.bugs.unshift(rows[0]);
-              render();
-              toast('ok','已在本地新增（不影响后端）');
+            const row = { name:'新 Bug', status:'ns', severity:'s1', is_focus:false, due_date:'', module:'Bug', note:'' };
+            const tmpId = -Math.floor(Math.random() * 1e9);
+            app.board.bugs = app.board.bugs || [];
+            app.board.bugs.unshift({ id: tmpId, ...row });
+            render();
+            saveLocalDraft();
+            try{
+              const rows = await insertRow('bugs', row);
+              const created = rows?.[0];
+              if(created?.id) replaceTempId('bugs', tmpId, created.id);
+              toast('ok','已新增');
               saveLocalDraft();
-              return;
+            }catch(e){
+              console.warn(e);
+              enqueue({ op:'insert', table:'bugs', row, tempId: tmpId });
+              toast('warn', '已在前端新增，待同步后端');
             }
-            toast('ok','已新增');
-            await refresh();
             return;
           }
           if(kind==='ops'){
-            const rows = await insertRow('ops_actions', { name:'新运营动作', status:'plan', category:'campaign', target_date:'', channel:'', owners:[], note:'', is_archived:false, is_focus:false });
-            if(app.localOnly){
-              app.board.ops = app.board.ops || [];
-              app.board.ops.unshift(rows[0]);
-              render();
-              toast('ok','已在本地新增（不影响后端）');
+            const row = { name:'新运营动作', status:'plan', category:'campaign', target_date:'', channel:'', owners:[], note:'', is_archived:false, is_focus:false };
+            const tmpId = -Math.floor(Math.random() * 1e9);
+            app.board.ops = app.board.ops || [];
+            app.board.ops.unshift({ id: tmpId, ...row });
+            render();
+            saveLocalDraft();
+            try{
+              const rows = await insertRow('ops_actions', row);
+              const created = rows?.[0];
+              if(created?.id) replaceTempId('ops_actions', tmpId, created.id);
+              toast('ok','已新增');
               saveLocalDraft();
-              return;
+            }catch(e){
+              console.warn(e);
+              enqueue({ op:'insert', table:'ops_actions', row, tempId: tmpId });
+              toast('warn', '已在前端新增，待同步后端');
             }
-            toast('ok','已新增');
-            await refresh();
             return;
           }
           if(kind==='backlog'){
             const pid = app.backlogPhase || app.board.currentPhase?.id || 1;
-            const rows = await insertRow('backlog', { name:'新 Backlog', priority:'p2', phase_id: pid, platforms:[], module:'', note:'', source:'internal', is_archived:false });
-            if(app.localOnly){
-              app.board.backlog = app.board.backlog || [];
-              app.board.backlog.unshift(rows[0]);
-              render();
-              toast('ok','已在本地新增（不影响后端）');
+            const row = { name:'新 Backlog', priority:'p2', phase_id: pid, platforms:[], module:'', note:'', source:'internal', is_archived:false };
+            const tmpId = -Math.floor(Math.random() * 1e9);
+            app.board.backlog = app.board.backlog || [];
+            app.board.backlog.unshift({ id: tmpId, ...row });
+            render();
+            saveLocalDraft();
+            try{
+              const rows = await insertRow('backlog', row);
+              const created = rows?.[0];
+              if(created?.id) replaceTempId('backlog', tmpId, created.id);
+              toast('ok','已新增');
               saveLocalDraft();
-              return;
+            }catch(e){
+              console.warn(e);
+              enqueue({ op:'insert', table:'backlog', row, tempId: tmpId });
+              toast('warn', '已在前端新增，待同步后端');
             }
-            toast('ok','已新增');
-            await refresh();
             return;
           }
         }catch(e){
@@ -2135,24 +2249,11 @@
       }
 
       async function refresh(){
-        if(app.localOnly){
-          toast('warn', '当前为本地草稿模式：刷新不会从后端覆盖本地修改');
-          return;
-        }
-        app.board = await loadBoard();
-        render();
+        // 当存在待同步队列时，刷新按钮用于“同步/重试”
+        await syncNow();
       }
 
       function openLogin(){
-        if(app.localOnly){
-          // 本地草稿模式：不需要登录也能编辑
-          const next = false;
-          app.localOnly = next;
-          clearLocalDraft();
-          toast('warn', '已切换到写回后端模式（需要管理员登录）');
-          render();
-          return;
-        }
         $('loginModal').classList.add('open');
         $('loginErr').style.display = 'none';
         $('loginErr').textContent = '';
@@ -2191,10 +2292,12 @@
       (async function init(){
         $('todayStr').textContent = todayStr();
         try{
+          app.syncQueue = loadQueue();
           const draft = loadLocalDraft();
           if(draft?.board){
+            // 先加载本地草稿（保证前端生效），再由用户点击“同步”写回
             app.board = draft.board;
-            toast('warn', '已加载本地草稿（后端数据不会变）');
+            toast('warn', (app.syncQueue?.length||0) > 0 ? '已加载本地草稿（有待同步变更）' : '已加载本地草稿');
           }else{
             app.board = await loadBoard();
           }
