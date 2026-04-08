@@ -976,6 +976,7 @@
         versionsPlatform: 'ios',
         backlogPhase: null,
         drawer: { open:false, kind:null, row:null },
+        localOnly: true, // 默认：只在前端生效，不写回后端
       };
 
       const TABS = [
@@ -995,6 +996,33 @@
         el.textContent = msg;
         clearTimeout(toast._t);
         toast._t = setTimeout(()=>{ el.className = 'toast'; }, 2200);
+      }
+
+      function draftKey(){
+        // 按环境固定一个 key，避免与其它页面冲突
+        return 'mindback_dashboard_local_draft_v1';
+      }
+
+      function loadLocalDraft(){
+        try{
+          const raw = localStorage.getItem(draftKey());
+          if(!raw) return null;
+          const data = JSON.parse(raw);
+          return data && typeof data === 'object' ? data : null;
+        }catch(_e){
+          return null;
+        }
+      }
+
+      function saveLocalDraft(){
+        if(!app.localOnly) return;
+        try{
+          localStorage.setItem(draftKey(), JSON.stringify({ board: app.board, ts: Date.now() }));
+        }catch(_e){}
+      }
+
+      function clearLocalDraft(){
+        try{ localStorage.removeItem(draftKey()); }catch(_e){}
       }
 
       function todayStr(){
@@ -1034,6 +1062,10 @@
       }
 
       async function patchById(table, idField, idValue, patch){
+        if(app.localOnly){
+          // 本地草稿模式：不写后端
+          return [{ [idField]: idValue, ...patch }];
+        }
         if(!app.accessToken){
           toast('warn', '请先登录管理员以写入');
           throw new Error('not_authenticated');
@@ -1048,6 +1080,11 @@
       }
 
       async function insertRow(table, row){
+        if(app.localOnly){
+          // 本地草稿模式：生成临时负 id，直接落到内存
+          const tmpId = -Math.floor(Math.random() * 1e9);
+          return [{ id: tmpId, ...row }];
+        }
         if(!app.accessToken){
           toast('warn', '请先登录管理员以写入');
           throw new Error('not_authenticated');
@@ -1061,6 +1098,9 @@
       }
 
       async function deleteById(table, idField, idValue){
+        if(app.localOnly){
+          return [{ [idField]: idValue }];
+        }
         if(!app.accessToken){
           toast('warn', '请先登录管理员以写入');
           throw new Error('not_authenticated');
@@ -1180,6 +1220,10 @@
         const badge = $('phaseBadge');
         if(p){
           badge.textContent = `${p.name || '阶段'}·${p.theme || ''}`.replace(/\s*·\s*$/,'');
+        }
+        const adminBtn = $('adminBtn');
+        if(adminBtn){
+          adminBtn.textContent = app.localOnly ? '本地草稿 ✓' : (app.accessToken ? '已登录 ✓' : '管理员登录');
         }
       }
 
@@ -1423,13 +1467,23 @@
           }
 
           await patchById(kindToTable(kind), 'id', row.id, patch);
-          toast('ok', '已保存');
-          await refresh();
+          toast('ok', app.localOnly ? '已在本地保存（不影响后端）' : '已保存');
+          saveLocalDraft();
+          if(!app.localOnly) await refresh();
           closeDrawer();
         }catch(e){
           console.warn(e);
-          if(before) applyLocal(kind, row.id, before);
-          render();
+          // 本地草稿模式不回滚；远程模式才回滚
+          if(!app.localOnly){
+            if(before) applyLocal(kind, row.id, before);
+            render();
+          }
+          if(app.localOnly){
+            toast('ok', '已在本地保存（不影响后端）');
+            saveLocalDraft();
+            closeDrawer();
+            return;
+          }
           if(e && (e.status===401 || e.status===403)) toast('bad', '保存失败：RLS/未授权');
           else if(String(e.message||'').includes('not_authenticated')) toast('warn', '请先登录管理员以写入');
           else toast('bad', '保存失败');
@@ -1442,6 +1496,15 @@
         if(!confirm('确认删除？此操作不可恢复。')) return;
         try{
           await deleteById(kindToTable(kind), 'id', row.id);
+          // 本地删除：直接从内存移除
+          if(app.localOnly){
+            removeLocal(kind, row.id);
+            render();
+            toast('ok', '已在本地删除（不影响后端）');
+            saveLocalDraft();
+            closeDrawer();
+            return;
+          }
           toast('ok', '已删除');
           await refresh();
           closeDrawer();
@@ -1450,6 +1513,18 @@
           if(e && (e.status===401 || e.status===403)) toast('bad', '删除失败：RLS/未授权');
           else toast('bad', '删除失败');
         }
+      }
+
+      function removeLocal(kind, id){
+        const listName = kind==='task' ? 'tasks'
+          : kind==='bug' ? 'bugs'
+          : kind==='ops' ? 'ops'
+          : kind==='milestone' ? 'milestones'
+          : kind==='version' ? 'versions'
+          : kind==='backlog' ? 'backlog'
+          : null;
+        if(!listName) return;
+        app.board[listName] = (app.board[listName] || []).filter(x=>!(x && String(x.id)===String(id)));
       }
 
       async function toggleStatus(kind, id){
@@ -1480,41 +1555,80 @@
           applyLocal(kind, row.id, { status: next });
           render();
           await patchById(kindToTable(kind), 'id', row.id, { status: next });
-          toast('ok','已更新');
-          await refresh();
+          toast('ok', app.localOnly ? '已在本地更新（不影响后端）' : '已更新');
+          saveLocalDraft();
+          if(!app.localOnly) await refresh();
         }catch(e){
           console.warn(e);
-          applyLocal(kind, row.id, before);
-          render();
-          if(e && (e.status===401 || e.status===403)) toast('bad', '更新失败：RLS/未授权');
-          else if(String(e.message||'').includes('not_authenticated')) toast('warn', '请先登录管理员以写入');
-          else toast('bad','更新失败');
+          if(!app.localOnly){
+            applyLocal(kind, row.id, before);
+            render();
+            if(e && (e.status===401 || e.status===403)) toast('bad', '更新失败：RLS/未授权');
+            else if(String(e.message||'').includes('not_authenticated')) toast('warn', '请先登录管理员以写入');
+            else toast('bad','更新失败');
+            return;
+          }
+          // 本地草稿模式：保持变更不回滚
+          toast('ok', '已在本地更新（不影响后端）');
+          saveLocalDraft();
         }
       }
 
       async function quickAdd(kind){
         try{
           if(kind==='task'){
-            await insertRow('tasks', { name:'新任务', status:'ns', priority:'p2', this_week:true, is_focus:false, due_date:'', module:'功能开发', note:'' });
+            const rows = await insertRow('tasks', { name:'新任务', status:'ns', priority:'p2', this_week:true, is_focus:false, due_date:'', module:'功能开发', note:'' });
+            if(app.localOnly){
+              app.board.tasks = app.board.tasks || [];
+              app.board.tasks.unshift(rows[0]);
+              render();
+              toast('ok','已在本地新增（不影响后端）');
+              saveLocalDraft();
+              return;
+            }
             toast('ok','已新增');
             await refresh();
             return;
           }
           if(kind==='bug'){
-            await insertRow('bugs', { name:'新 Bug', status:'ns', severity:'s1', is_focus:false, due_date:'', module:'Bug', note:'' });
+            const rows = await insertRow('bugs', { name:'新 Bug', status:'ns', severity:'s1', is_focus:false, due_date:'', module:'Bug', note:'' });
+            if(app.localOnly){
+              app.board.bugs = app.board.bugs || [];
+              app.board.bugs.unshift(rows[0]);
+              render();
+              toast('ok','已在本地新增（不影响后端）');
+              saveLocalDraft();
+              return;
+            }
             toast('ok','已新增');
             await refresh();
             return;
           }
           if(kind==='ops'){
-            await insertRow('ops_actions', { name:'新运营动作', status:'plan', category:'campaign', target_date:'', channel:'', owners:[], note:'', is_archived:false, is_focus:false });
+            const rows = await insertRow('ops_actions', { name:'新运营动作', status:'plan', category:'campaign', target_date:'', channel:'', owners:[], note:'', is_archived:false, is_focus:false });
+            if(app.localOnly){
+              app.board.ops = app.board.ops || [];
+              app.board.ops.unshift(rows[0]);
+              render();
+              toast('ok','已在本地新增（不影响后端）');
+              saveLocalDraft();
+              return;
+            }
             toast('ok','已新增');
             await refresh();
             return;
           }
           if(kind==='backlog'){
             const pid = app.backlogPhase || app.board.currentPhase?.id || 1;
-            await insertRow('backlog', { name:'新 Backlog', priority:'p2', phase_id: pid, platforms:[], module:'', note:'', source:'internal', is_archived:false });
+            const rows = await insertRow('backlog', { name:'新 Backlog', priority:'p2', phase_id: pid, platforms:[], module:'', note:'', source:'internal', is_archived:false });
+            if(app.localOnly){
+              app.board.backlog = app.board.backlog || [];
+              app.board.backlog.unshift(rows[0]);
+              render();
+              toast('ok','已在本地新增（不影响后端）');
+              saveLocalDraft();
+              return;
+            }
             toast('ok','已新增');
             await refresh();
             return;
@@ -1545,6 +1659,17 @@
             is_focus: false,
           });
           const newTask = inserted?.[0];
+          if(app.localOnly){
+            app.board.tasks = app.board.tasks || [];
+            app.board.tasks.unshift(newTask);
+            // 本地链接字段（如果存在）
+            applyLocal('backlog', row.id, { moved_to_task_id: newTask.id });
+            render();
+            toast('ok','已在本地移入本周（不影响后端）');
+            saveLocalDraft();
+            closeDrawer();
+            return;
+          }
           if(newTask?.id){
             try{ await patchById('backlog','id',row.id,{ moved_to_task_id: newTask.id }); }catch(_e){}
           }
@@ -1573,6 +1698,18 @@
             is_archived: false,
             moved_to_task_id: row.id,
           });
+          if(app.localOnly){
+            const newBl = inserted?.[0];
+            app.board.backlog = app.board.backlog || [];
+            app.board.backlog.unshift(newBl);
+            applyLocal('task', row.id, { this_week: false, moved_from_backlog_id: row.moved_from_backlog_id || null });
+            render();
+            toast('ok','已在本地移至 Backlog（不影响后端）');
+            saveLocalDraft();
+            closeDrawer();
+            if(newBl) openDrawer('backlog', newBl);
+            return;
+          }
           try{ await patchById('tasks','id',row.id,{ this_week: false }); }catch(_e){}
           toast('ok','已移至 Backlog');
           await refresh();
@@ -1998,11 +2135,24 @@
       }
 
       async function refresh(){
+        if(app.localOnly){
+          toast('warn', '当前为本地草稿模式：刷新不会从后端覆盖本地修改');
+          return;
+        }
         app.board = await loadBoard();
         render();
       }
 
       function openLogin(){
+        if(app.localOnly){
+          // 本地草稿模式：不需要登录也能编辑
+          const next = false;
+          app.localOnly = next;
+          clearLocalDraft();
+          toast('warn', '已切换到写回后端模式（需要管理员登录）');
+          render();
+          return;
+        }
         $('loginModal').classList.add('open');
         $('loginErr').style.display = 'none';
         $('loginErr').textContent = '';
@@ -2041,7 +2191,13 @@
       (async function init(){
         $('todayStr').textContent = todayStr();
         try{
-          app.board = await loadBoard();
+          const draft = loadLocalDraft();
+          if(draft?.board){
+            app.board = draft.board;
+            toast('warn', '已加载本地草稿（后端数据不会变）');
+          }else{
+            app.board = await loadBoard();
+          }
           render();
         }catch(e){
           console.warn(e);
