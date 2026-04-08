@@ -670,6 +670,376 @@
         `;
       }
 
+      function chip(text, cls=''){
+        return `<span class="tag" style="border-radius:999px;padding:2px 10px;${cls}">${escapeHtml(text)}</span>`;
+      }
+
+      function priorityCycle(p){
+        const arr = ['p0','p1','p2'];
+        const i = Math.max(0, arr.indexOf(String(p||'p2')));
+        return arr[(i+1)%arr.length];
+      }
+
+      function taskStatusCycle(s){
+        const arr = ['ns','prog','test','done','block'];
+        const i = Math.max(0, arr.indexOf(String(s||'ns')));
+        return arr[(i+1)%arr.length];
+      }
+
+      function milestoneStatusCycle(s){
+        const arr = ['plan','current','done','campaign','delay'];
+        const i = Math.max(0, arr.indexOf(String(s||'plan')));
+        return arr[(i+1)%arr.length];
+      }
+
+      async function getAccessToken(){
+        if(!app.supabase) return null;
+        const { data } = await app.supabase.auth.getSession();
+        return data?.session?.access_token || null;
+      }
+
+      async function patchById(table, id, patch){
+        const token = await getAccessToken();
+        if(!token) throw new Error('NOT_AUTH');
+        const url = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}?id=eq.${encodeURIComponent(id)}`;
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: 'Bearer ' + token,
+            'Content-Type': 'application/json',
+            Prefer: 'return=representation',
+          },
+          body: JSON.stringify(patch),
+        });
+        const text = await res.text();
+        if(!res.ok) throw new Error(text || `PATCH ${table} failed`);
+        return text;
+      }
+
+      function renderOverviewTab(board){
+        const view = $('view-overview');
+        if(!view) return;
+
+        const ov = board.overview;
+        const monthKey = board.monthKey;
+        const phases = board.phases || [];
+        const currentPhase = phases.find(p=>p.is_current) || null;
+
+        const monthGoal = ov?.month_goal || '';
+        const monthGoalUpdatedAt = ov?.month_goal_updated_at || ov?.updated_at || null;
+        const nextPreview = ov?.next_preview || '';
+        const kpis = (ov && ov.kpis && typeof ov.kpis === 'object') ? ov.kpis : {};
+
+        const milestones = (board.milestones||[]).slice();
+        const mileRows = milestones.map(m=>{
+          const st = m.status || 'plan';
+          const dot = st==='done' ? '🟢' : st==='current' ? '🔵' : st==='delay' ? '🔴' : st==='campaign' ? '🟠' : '⚪';
+          return `
+            <div class="item" data-mile-id="${escapeHtml(m.id)}" style="cursor:${app.isAdmin?'pointer':'default'}">
+              <div style="min-width:0">
+                <div class="name">${dot} ${escapeHtml(m.title||m.id)}</div>
+                <div class="small muted" style="margin-top:4px">${escapeHtml(m.date_full||'')}</div>
+              </div>
+              <div class="tags">
+                <span class="status ${statusClass(st==='plan'?'ns':st==='current'?'prog':st==='done'?'done':st==='delay'?'block':'ns')}" data-mile-status style="cursor:${app.isAdmin?'pointer':'default'}">${escapeHtml(st)}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        const kpiKeys = Object.keys(kpis||{});
+        const kpiCards = kpiKeys.length
+          ? `<div class="grid" style="margin-top:12px">${kpiKeys.map(key=>{
+              const o = kpis[key] || {};
+              const val = (o && typeof o === 'object' && 'value' in o) ? o.value : o;
+              const upd = (o && typeof o === 'object') ? (o.updated_at || o.updatedAt || null) : null;
+              return `
+                <div class="card" style="grid-column:span 3;min-height:88px" data-kpi="${escapeHtml(key)}">
+                  <h3>${escapeHtml(key)}</h3>
+                  <div style="font-size:22px;font-weight:850;letter-spacing:-.2px">${escapeHtml(String(val ?? '—'))}</div>
+                  <div class="small muted" style="margin-top:6px">${upd ? `更新于 ${escapeHtml(String(upd))}` : ''}</div>
+                </div>
+              `;
+            }).join('')}</div>`
+          : `<div class="empty" style="margin-top:12px">暂无 KPI（将写入 <code>board_overview.kpis</code>）</div>`;
+
+        view.innerHTML = `
+          <div class="ov-month-hero">
+            <h1>${escapeHtml(monthKey)} · 总览</h1>
+            <div class="subtitle">${currentPhase ? `阶段：${escapeHtml(currentPhase.name)} · ${escapeHtml(currentPhase.theme||'')}` : '—'}</div>
+            <div class="small" style="color:var(--text-secondary)">数据源：Supabase（board_overview / milestones）</div>
+          </div>
+
+          <div class="grid">
+            <div class="card" style="grid-column:span 12">
+              <h3>本月目标</h3>
+              <div class="small" style="margin-top:6px">${monthGoal ? escapeHtml(monthGoal).replaceAll('\\n','<br/>') : '<span class="muted">（待填写）</span>'}</div>
+              <div class="small muted" style="margin-top:8px">${monthGoalUpdatedAt ? `更新于 ${fmtTime(monthGoalUpdatedAt)}` : ''}</div>
+            </div>
+
+            <div class="card" style="grid-column:span 12">
+              <h3>核心指标</h3>
+              ${kpiCards}
+            </div>
+
+            <div class="card" style="grid-column:span 12">
+              <h3>下阶段预告</h3>
+              <div class="small" style="margin-top:6px">${nextPreview ? escapeHtml(nextPreview).replaceAll('\\n','<br/>') : '<span class="muted">（待填写）</span>'}</div>
+            </div>
+
+            <div class="card" style="grid-column:span 12">
+              <h3>里程碑</h3>
+              <div class="list" style="margin-top:10px">${mileRows || '<div class="empty">暂无里程碑</div>'}</div>
+            </div>
+          </div>
+        `;
+
+        if(app.isAdmin){
+          view.querySelectorAll('[data-mile-status]').forEach(el=>{
+            el.addEventListener('click', async (e)=>{
+              const row = el.closest('[data-mile-id]');
+              const id = row?.getAttribute('data-mile-id');
+              if(!id) return;
+              const m = (board.milestones||[]).find(x=>x.id===id);
+              if(!m) return;
+              const next = milestoneStatusCycle(m.status);
+              try{
+                await patchById('milestones', id, { status: next });
+                m.status = next;
+                renderOverviewTab(board);
+              }catch(err){
+                alert('写入失败：请确认 Supabase 已为管理员开放 milestones 的 UPDATE policy（或改为后端写入）。');
+                console.warn(err);
+              }
+            });
+          });
+        }
+      }
+
+      function renderThisWeekTab(board){
+        const view = $('view-thisweek');
+        if(!view) return;
+        const tasks = (board.tasks||[]).filter(t=>t && !t.is_archived && t.this_week);
+        const versions = board.versions || [];
+        const versionById = new Map(versions.map(v=>[v.id, v]));
+
+        const cols = [
+          { id:'ns', label:'未开始' },
+          { id:'prog', label:'进行中' },
+          { id:'test', label:'测试中' },
+          { id:'done', label:'完成' },
+          { id:'block', label:'阻塞' },
+        ];
+
+        function renderTaskCard(t){
+          const v = t.version_id ? versionById.get(t.version_id) : null;
+          const verSlug = v?.slug || '';
+          const pri = (t.priority || 'p2').toUpperCase();
+          return `
+            <div class="item" data-task-id="${escapeHtml(t.id)}" style="cursor:${app.isAdmin?'default':'default'}">
+              <div style="min-width:0;flex:1">
+                <div class="name" style="line-height:1.3">${escapeHtml(t.name||'')}</div>
+                <div class="small muted" style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                  ${Array.isArray(t.owners)&&t.owners.length ? `<span>${escapeHtml(t.owners.join('、'))}</span>` : `<span class="muted">未分配</span>`}
+                  ${verSlug ? `<span class="tag">${escapeHtml(verSlug)}</span>` : ''}
+                </div>
+                ${t.note ? `<div class="small" style="margin-top:8px;color:var(--text-secondary)">${escapeHtml(t.note)}</div>` : ''}
+              </div>
+              <div class="tags" style="align-items:flex-start">
+                <span class="tag" data-pri style="font-weight:850">${escapeHtml(pri)}</span>
+                <span class="status ${statusClass(t.status)}" data-st>${statusLabel(t.status)}</span>
+                <span class="tag" data-week style="${t.this_week?'border-color:rgba(124,157,255,0.35);color:var(--blue-light)':''}">⚡</span>
+              </div>
+            </div>
+          `;
+        }
+
+        const colHtml = cols.map(c=>{
+          const list = tasks.filter(t=>t.status===c.id);
+          return `
+            <div class="card" style="padding:12px 14px;min-height:240px">
+              <div class="row" style="align-items:center">
+                <div style="font-weight:850;font-size:var(--fs-12);letter-spacing:.8px;text-transform:uppercase;color:var(--text-muted)">${escapeHtml(c.label)}</div>
+                <div class="tag" style="border-radius:999px">${list.length}</div>
+              </div>
+              <div class="list" style="margin-top:12px">${list.map(renderTaskCard).join('') || `<div class="empty">暂无</div>`}</div>
+              <div style="margin-top:12px" ${app.isAdmin?`data-add="${escapeHtml(c.id)}"`:''}>
+                ${app.isAdmin ? `<button class="btn" type="button" data-add-btn="${escapeHtml(c.id)}">+ 添加任务</button>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        view.innerHTML = `
+          <div class="row" style="margin-bottom:12px">
+            <div>
+              <div style="font-size:var(--fs-14);font-weight:850">本周</div>
+              <div class="small muted" style="margin-top:6px">只展示 <code>tasks.this_week=true</code> 的任务。点击状态/优先级可快速切换。</div>
+            </div>
+          </div>
+          <div class="grid">
+            <div style="grid-column:span 12;display:grid;gap:12px;grid-template-columns:repeat(5,1fr)">
+              ${colHtml}
+            </div>
+          </div>
+        `;
+
+        if(!app.isAdmin) return;
+
+        view.querySelectorAll('[data-task-id]').forEach(row=>{
+          const id = Number(row.getAttribute('data-task-id'));
+          const t = tasks.find(x=>x.id===id);
+          if(!t) return;
+          row.querySelector('[data-st]')?.addEventListener('click', async ()=>{
+            const next = taskStatusCycle(t.status);
+            try{
+              await patchById('tasks', id, { status: next });
+              t.status = next;
+              renderThisWeekTab(board);
+            }catch(err){
+              alert('写入失败：请确认 Supabase 已为管理员开放 tasks 的 UPDATE policy（或改为后端写入）。');
+              console.warn(err);
+            }
+          });
+          row.querySelector('[data-pri]')?.addEventListener('click', async ()=>{
+            const next = priorityCycle(t.priority);
+            try{
+              await patchById('tasks', id, { priority: next });
+              t.priority = next;
+              renderThisWeekTab(board);
+            }catch(err){
+              alert('写入失败：请确认 Supabase 已为管理员开放 tasks 的 UPDATE policy（或改为后端写入）。');
+              console.warn(err);
+            }
+          });
+          row.querySelector('[data-week]')?.addEventListener('click', async ()=>{
+            const next = !t.this_week;
+            try{
+              await patchById('tasks', id, { this_week: next });
+              t.this_week = next;
+              renderThisWeekTab(board);
+            }catch(err){
+              alert('写入失败：请确认 Supabase 已为管理员开放 tasks 的 UPDATE policy（或改为后端写入）。');
+              console.warn(err);
+            }
+          });
+        });
+      }
+
+      function renderVersionsTab(board){
+        const view = $('view-versions');
+        if(!view) return;
+
+        const versions = board.versions || [];
+        const tasks = (board.tasks||[]).filter(t=>t && !t.is_archived);
+
+        const platforms = [
+          { id:'ios', label:'iOS' },
+          { id:'android', label:'Android' },
+          { id:'web', label:'Web' },
+        ];
+        if(!app.selectedPlatform) app.selectedPlatform = 'ios';
+
+        const pf = app.selectedPlatform;
+        const vList = versions.filter(v=>v.platform===pf).slice().sort((a,b)=>(b.sort_order||0)-(a.sort_order||0));
+
+        function versionStatusLabel(s){
+          return s==='dev'?'开发中'
+            : s==='testing'?'提测中'
+            : s==='submitted'?'已提审'
+            : s==='released'?'已上线'
+            : s||'—';
+        }
+
+        function versionStatusNext(s){
+          const arr = ['dev','testing','submitted','released'];
+          const i = Math.max(0, arr.indexOf(String(s||'dev')));
+          return arr[(i+1)%arr.length];
+        }
+
+        const tabs = platforms.map(p=>`
+          <button class="btn ${pf===p.id?'primary':''}" type="button" data-pf="${p.id}">${p.label}</button>
+        `).join('');
+
+        const cards = vList.map(v=>{
+          const vTasks = tasks.filter(t=>t.version_id===v.id);
+          return `
+            <div class="card" data-ver-id="${escapeHtml(v.id)}" style="margin-bottom:12px">
+              <div class="row" style="align-items:flex-start">
+                <div style="min-width:0">
+                  <div style="font-size:var(--fs-14);font-weight:850">${escapeHtml(v.version_num)} <span class="tag" style="margin-left:8px" data-ver-status>${escapeHtml(versionStatusLabel(v.status))}</span></div>
+                  <div class="small muted" style="margin-top:6px">目标上线：${escapeHtml(v.target_date||'—')} ${v.submitted_at?`· 提审 ${escapeHtml(fmtTime(v.submitted_at))}`:''}</div>
+                </div>
+                <div class="small muted">${escapeHtml(v.slug||'')}</div>
+              </div>
+              <div class="list" style="margin-top:12px">
+                ${vTasks.length ? vTasks.map(t=>`
+                  <div class="item" data-task-id="${escapeHtml(t.id)}">
+                    <div class="name" style="min-width:0">${escapeHtml(t.name||'')}</div>
+                    <div class="tags">
+                      <span class="status ${statusClass(t.status)}" data-task-status>${statusLabel(t.status)}</span>
+                    </div>
+                  </div>
+                `).join('') : `<div class="empty">此版本暂无任务</div>`}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        view.innerHTML = `
+          <div class="row" style="margin-bottom:12px">
+            <div>
+              <div style="font-size:var(--fs-14);font-weight:850">版本管理</div>
+              <div class="small muted" style="margin-top:6px">任务通过 <code>tasks.version_id</code> 归组到版本；版本状态切换会自动记录时间戳。</div>
+            </div>
+            <div style="display:flex;gap:8px">${tabs}</div>
+          </div>
+          ${cards || `<div class=\"empty\">暂无版本</div>`}
+        `;
+
+        view.querySelectorAll('[data-pf]').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            app.selectedPlatform = btn.getAttribute('data-pf');
+            renderVersionsTab(board);
+          });
+        });
+
+        if(!app.isAdmin) return;
+
+        view.querySelectorAll('[data-ver-id]').forEach(card=>{
+          const id = Number(card.getAttribute('data-ver-id'));
+          const v = versions.find(x=>x.id===id);
+          card.querySelector('[data-ver-status]')?.addEventListener('click', async ()=>{
+            const next = versionStatusNext(v.status);
+            try{
+              await patchById('versions', id, { status: next });
+              v.status = next;
+              renderVersionsTab(board);
+            }catch(err){
+              alert('写入失败：请确认 Supabase 已为管理员开放 versions 的 UPDATE policy（或改为后端写入）。');
+              console.warn(err);
+            }
+          });
+        });
+
+        view.querySelectorAll('[data-task-id]').forEach(row=>{
+          const id = Number(row.getAttribute('data-task-id'));
+          const t = tasks.find(x=>x.id===id);
+          row.querySelector('[data-task-status]')?.addEventListener('click', async ()=>{
+            const next = taskStatusCycle(t.status);
+            try{
+              await patchById('tasks', id, { status: next });
+              t.status = next;
+              renderVersionsTab(board);
+            }catch(err){
+              alert('写入失败：请确认 Supabase 已为管理员开放 tasks 的 UPDATE policy（或改为后端写入）。');
+              console.warn(err);
+            }
+          });
+        });
+      }
+
       function ymKey(d){
         const y = d.getFullYear();
         const m = String(d.getMonth()+1).padStart(2,'0');
@@ -1042,15 +1412,11 @@
           setDbStatus('ok', 'DB 已连接（表）');
           $('lastUpdated').textContent = fmtTime(new Date().toISOString());
 
-          // temp: reuse old overview renderer until new tab renderers are in place
-          $('view-overview').innerHTML = `
-            <div class="card">
-              <h3>总览</h3>
-              <div style="font-size:14px;font-weight:900;margin-top:2px">已切换到新 IA（5 个 Tab）</div>
-              <div class="small" style="margin-top:8px">下一步将按设计文档实现：总览 KPI/本周列视图/版本管理/里程碑/Backlog，并补齐行内编辑与抽屉。</div>
-              <div class="small" style="margin-top:8px">当前月份：<b>${escapeHtml(board.monthKey)}</b>；tasks：<b>${board.tasks.length}</b>；milestones：<b>${board.milestones.length}</b>；backlog：<b>${board.backlog.length}</b></div>
-            </div>
-          `;
+          renderOverviewTab(board);
+          renderThisWeekTab(board);
+          renderVersionsTab(board);
+          renderPlaceholder('milestones', '里程碑', '即将按设计文档实现（列表 + 抽屉）');
+          renderPlaceholder('backlog', 'Backlog', '即将按设计文档实现（阶段分组 + 抽屉）');
         }catch(e){
           console.warn(e);
           setDbStatus('bad', 'DB 离线');
@@ -1082,6 +1448,7 @@
         snapshot: null,
         draft: null,
         board: null,
+        selectedPlatform: 'ios',
       };
 
       function escapeHtml(s){
