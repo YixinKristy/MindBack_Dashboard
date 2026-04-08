@@ -312,17 +312,15 @@
 
     <div class="layout">
       <aside class="sidebar">
-        <div id="sidebarMonth"></div>
-        <div id="sidebarWeeks"></div>
         <div class="side-nav" id="sidebarNav"></div>
       </aside>
       <main class="main">
         <div class="main-scroll">
           <div class="view active" id="view-overview"></div>
-          <div class="view" id="view-features"></div>
-          <div class="view" id="view-bugs"></div>
-          <div class="view" id="view-ops"></div>
-          <div class="view" id="view-archive"></div>
+          <div class="view" id="view-thisweek"></div>
+          <div class="view" id="view-versions"></div>
+          <div class="view" id="view-milestones"></div>
+          <div class="view" id="view-backlog"></div>
         </div>
       </main>
     </div>
@@ -351,17 +349,18 @@
       // ── Supabase 只读连接（公开可用：publishable/anon key） ──
       const SUPABASE_URL = 'https://youwcvqibzscimrcumej.supabase.co';
       const SUPABASE_ANON_KEY = 'sb_publishable__IxFWKd1RZG2qnXRKg5uhg_lxIhgDSx';
+      // legacy snapshot key (kept for transition; new IA uses normalized tables)
       const SNAPSHOT_KEY = 'prod';
       const ADMIN_UID = '618d276a-fbba-4c40-a261-6567c00b0b5f';
 
       const LEGACY_FILE = 'MindBack产品看板_部署版%20(13).html';
 
       const VIEWS = [
-        { id: 'overview', label: '总览 Overview' },
-        { id: 'features', label: '功能详情' },
-        { id: 'bugs', label: 'Bug 追踪' },
-        { id: 'ops', label: '运营协同' },
-        { id: 'archive', label: '历史归档' },
+        { id: 'overview', label: '总览' },
+        { id: 'thisweek', label: '本周' },
+        { id: 'versions', label: '版本管理' },
+        { id: 'milestones', label: '里程碑' },
+        { id: 'backlog', label: 'Backlog' },
       ];
 
       function $(id){ return document.getElementById(id); }
@@ -481,9 +480,6 @@
         const v2 = ensureV2Shape(normalizeSnapshot(state));
         const c = groupCounts(v2.legacy || {});
 
-        renderSidebarMonth(v2);
-        renderSidebarWeeks(v2);
-
         const kpiHtml = `
           <div class="kpi-row">
             <div class="kpi blue${app.kpiFilter==='thisWeek'?' active':''}" data-kpi="thisWeek"><div class="ico">🔵</div><div class="n">${c.thisWeek.length}</div><div class="l">本周推进</div></div>
@@ -529,7 +525,6 @@
             v2.monthPlans[mk].title = String(titleEl.value || '').trim();
             app.isDirty = true;
             updateSaveBtn();
-            renderSidebarMonth(app.draft);
           });
         }
         if(progEl){
@@ -540,68 +535,11 @@
             v2.monthPlans[mk].progress = Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : null;
             app.isDirty = true;
             updateSaveBtn();
-            renderSidebarMonth(app.draft);
           });
         }
       }
 
-      function renderSidebarMonth(v2){
-        const el = $('sidebarMonth');
-        if(!el) return;
-        const selId = app.selectedWeekId || currentWeekId(v2.weeks||[]);
-        const w = (v2.weeks||[]).find(x=>x.id===selId) || (v2.weeks||[])[0];
-        const monthKey = w?.month || '';
-        const mp = getMonthPlan(v2, monthKey);
-        const title = mp?.title || '';
-        const progress = Number.isFinite(mp?.progress) ? mp.progress : null;
-        const pct = progress===null ? '—' : `${Math.round(progress)}%`;
-        const barW = progress===null ? 0 : Math.min(100, Math.max(0, progress));
-        el.innerHTML = `
-          <div class="side-month">
-            <div class="lbl">${monthKey ? escapeHtml(monthKey) + ' · 月目标' : '本月目标'}</div>
-            <div class="txt" title="${escapeHtml(title)}">${title ? escapeHtml(title) : '（待填写）'}</div>
-            <div class="side-bar">
-              <div class="bar"><i style="width:${barW}%"></i></div>
-              <div class="pct">${pct}</div>
-            </div>
-          </div>
-        `;
-        el.querySelector('.side-month')?.addEventListener('click', ()=>{
-          switchTab('overview');
-        });
-      }
-
-      function renderSidebarWeeks(v2){
-        const el = $('sidebarWeeks');
-        if(!el) return;
-        const weeks = v2.weeks || [];
-        const curId = currentWeekId(weeks);
-        const selected = app.selectedWeekId || curId;
-        el.innerHTML = weeks.map(w=>{
-          const isCur = w.id === curId;
-          const cls = w.id===selected ? 'side-week active' : 'side-week';
-          return `
-            <div class="${cls}" data-week="${escapeHtml(w.id)}">
-              <div class="l">
-                <span class="dot"></span>
-                ${isCur ? '<span class="badge">本周</span>' : '<span class="muted">○</span>'}
-                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(w.month)}</span>
-              </div>
-              <div class="r">${escapeHtml(shortRangeLabel(w))}${w.done ? ' ✓' : ''}</div>
-            </div>
-          `;
-        }).join('');
-        el.querySelectorAll('[data-week]').forEach(row=>{
-          row.addEventListener('click', ()=>{
-            app.selectedWeekId = row.getAttribute('data-week');
-            // 切换周 => 主内容淡入
-            const detail = $('weekDetail');
-            if(detail) detail.classList.remove('fade');
-            switchTab('overview');
-            renderOverview(app.draft, app.snapshotRow?.updated_at);
-          });
-        });
-      }
+      // (sidebar month/weeks removed in v1.0 product design; overview owns month/weekly presentation)
 
       function renderWeekDetailCard(v2, w, updatedAt){
         const curId = currentWeekId(v2.weeks||[]);
@@ -730,6 +668,41 @@
             </div>
           </div>
         `;
+      }
+
+      function ymKey(d){
+        const y = d.getFullYear();
+        const m = String(d.getMonth()+1).padStart(2,'0');
+        return `${y}-${m}`;
+      }
+
+      async function loadBoardData(){
+        const monthKey = ymKey(new Date());
+        const [
+          phases,
+          versions,
+          milestones,
+          tasks,
+          backlog,
+          overviewRows,
+        ] = await Promise.all([
+          fetchTable('phases', '*', 'order=sort_order.asc'),
+          fetchTable('versions', '*', 'order=sort_order.asc'),
+          fetchTable('milestones', '*', 'order=sort_order.asc'),
+          fetchTable('tasks', '*', 'order=id.asc'),
+          fetchTable('backlog', '*', 'order=id.asc'),
+          fetchTable('board_overview', '*', `month_key=eq.${encodeURIComponent(monthKey)}`),
+        ]);
+
+        return {
+          monthKey,
+          phases: Array.isArray(phases) ? phases : [],
+          versions: Array.isArray(versions) ? versions : [],
+          milestones: Array.isArray(milestones) ? milestones : [],
+          tasks: Array.isArray(tasks) ? tasks : [],
+          backlog: Array.isArray(backlog) ? backlog : [],
+          overview: (Array.isArray(overviewRows) && overviewRows[0]) ? overviewRows[0] : null,
+        };
       }
 
       function legacyLookup(v2, ref){
@@ -1055,44 +1028,29 @@
         $('legacyBtn').addEventListener('click', ()=> window.open(LEGACY_FILE, '_blank'));
         renderSidebarNav('overview');
 
-        // 功能详情：管理员“收件箱分类面板”
-        renderPlaceholder('features', '功能详情', '加载中…');
-        renderPlaceholder('bugs', 'Bug 追踪', 'v1：即将按 S0/S1/S2 分级 + 筛选重做');
-        renderPlaceholder('ops', '运营协同', 'v1：即将按类型分组 + 依赖功能 + 数据洞察重做');
-        renderPlaceholder('archive', '历史归档', 'v1：即将按月 → 版本/里程碑归档重做');
+        renderPlaceholder('overview', '总览', '加载中…');
+        renderPlaceholder('thisweek', '本周', '加载中…');
+        renderPlaceholder('versions', '版本管理', '加载中…');
+        renderPlaceholder('milestones', '里程碑', '加载中…');
+        renderPlaceholder('backlog', 'Backlog', '加载中…');
 
         try{
           setDbStatus('loading', '连接中…');
-          const row = await loadSnapshot();
-          const data = row && row.data ? row.data : null;
-          const updatedAt = row && row.updated_at ? row.updated_at : null;
-          $('lastUpdated').textContent = fmtTime(updatedAt);
+          // new product design: tables are primary data source
+          const board = await loadBoardData();
+          app.board = board;
+          setDbStatus('ok', 'DB 已连接（表）');
+          $('lastUpdated').textContent = fmtTime(new Date().toISOString());
 
-          let draft = deepClone(ensureV2Shape(normalizeSnapshot((data && typeof data === 'object') ? data : {})));
-          let legacyFromTables = null;
-          try{
-            legacyFromTables = await loadLegacyFromTables();
-          }catch(e){
-            console.warn('loadLegacyFromTables failed, fallback to snapshot legacy', e);
-          }
-
-          if(legacyFromTables){
-            draft.legacy = legacyFromTables;
-          }
-
-          if(data && typeof data === 'object'){
-            setDbStatus('ok', legacyFromTables ? 'DB 已连接（表+编排）' : 'DB 已连接（快照）');
-            app.snapshotRow = row;
-            app.snapshot = data;
-          }else{
-            setDbStatus('warn', legacyFromTables ? 'DB 已连接（表）' : 'DB 已连接（数据为空）');
-            app.snapshotRow = row;
-            app.snapshot = {};
-          }
-
-          app.draft = draft;
-          renderOverview(app.draft, updatedAt);
-          renderFeaturesTab(app.draft);
+          // temp: reuse old overview renderer until new tab renderers are in place
+          $('view-overview').innerHTML = `
+            <div class="card">
+              <h3>总览</h3>
+              <div style="font-size:14px;font-weight:900;margin-top:2px">已切换到新 IA（5 个 Tab）</div>
+              <div class="small" style="margin-top:8px">下一步将按设计文档实现：总览 KPI/本周列视图/版本管理/里程碑/Backlog，并补齐行内编辑与抽屉。</div>
+              <div class="small" style="margin-top:8px">当前月份：<b>${escapeHtml(board.monthKey)}</b>；tasks：<b>${board.tasks.length}</b>；milestones：<b>${board.milestones.length}</b>；backlog：<b>${board.backlog.length}</b></div>
+            </div>
+          `;
         }catch(e){
           console.warn(e);
           setDbStatus('bad', 'DB 离线');
@@ -1100,7 +1058,7 @@
           // 回退：旧版文件内置数据仍可用
           $('view-overview').innerHTML = `
             <div class="card">
-              <h3>总览 Overview</h3>
+              <h3>总览</h3>
               <div style="font-size:14px;font-weight:900;margin-top:2px">当前无法从 Supabase 读取数据</div>
               <div class="small" style="margin-top:8px">你可以先打开右上角“旧版”确认页面可用；或检查 Supabase 的 RLS/网络。</div>
               <div class="footer" style="margin-top:10px">
@@ -1123,6 +1081,7 @@
         snapshotRow: null,
         snapshot: null,
         draft: null,
+        board: null,
       };
 
       function escapeHtml(s){
@@ -1630,6 +1589,8 @@
       }
 
       async function saveSnapshot(){
+        alert('当前已切换到新版 5 个 Tab 信息架构：保存逻辑将改为按表字段写回（Inline/Drawer）。此按钮暂时不执行。');
+        return;
         if(!app.isAdmin || !app.isDirty) return;
         if(!app.supabase){
           alert('Supabase SDK 未加载，请刷新页面重试。');
@@ -1707,6 +1668,7 @@
       $('authCancel').addEventListener('click', closeAuthModal);
       $('authSubmit').addEventListener('click', signIn);
       $('authModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeAuthModal(); });
+      // 保存：新 IA 以表为准，后续将实现按字段写回（inline/drawer）
       $('saveBtn').addEventListener('click', saveSnapshot);
 
       init().then(()=>{ bindWeekEdits(); updateSaveBtn(); });
