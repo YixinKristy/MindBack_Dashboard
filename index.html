@@ -932,6 +932,7 @@
           bugsRaw,
           peopleRaw,
           opsRaw,
+          versionsRaw,
           milestonesRaw,
           backlogRaw,
           techDebtRaw,
@@ -940,10 +941,14 @@
           fetchTable('bugs', '*', 'order=id.asc'),
           fetchTable('people', '*', 'order=name.asc'),
           fetchTable('ops_actions', '*', 'order=id.asc'),
+          fetchTable('versions', '*', 'order=sort_order.asc'),
           fetchTable('milestones', '*', 'order=sort_order.asc'),
           fetchTable('backlog', '*', 'order=id.asc'),
           fetchTable('tech_debt', '*', 'order=id.asc'),
         ]);
+
+        const versions = Array.isArray(versionsRaw) ? versionsRaw : [];
+        const versionById = new Map(versions.map(v=>[v.id, v]));
 
         const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).map(t=>({
           id: t.id,
@@ -955,7 +960,8 @@
           type: t.task_type,
           src: t.source,
           note: t.note || '',
-          version: t.version || '',
+          version: (()=>{ const v = versionById.get(t.version_id); return v?.slug || ''; })(),
+          versionId: t.version_id ?? null,
           thisWeek: !!t.this_week,
           milestoneId: t.milestone_id || null,
           isArchived: !!t.is_archived,
