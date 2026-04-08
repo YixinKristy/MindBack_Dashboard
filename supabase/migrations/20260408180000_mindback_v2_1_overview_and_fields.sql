@@ -56,6 +56,9 @@ BEGIN
     EXECUTE format('ALTER TABLE public.milestones DROP CONSTRAINT IF EXISTS %I', chk_name);
   END IF;
 
+  -- 迁移可能被重复执行：先删除同名约束，避免 42710
+  ALTER TABLE public.milestones DROP CONSTRAINT IF EXISTS milestones_status_check;
+
   ALTER TABLE public.milestones
     ADD CONSTRAINT milestones_status_check
     CHECK (status IN ('done','current','plan','campaign','delay'));
