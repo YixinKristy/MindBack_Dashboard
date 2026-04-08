@@ -918,6 +918,7 @@
           <div class="header-right">
             <span id="todayStr">—</span>
             <button class="btn ghost" id="refreshBtn" type="button">刷新</button>
+            <button class="btn ghost" id="legacyBtn" type="button">回到旧版</button>
             <button class="btn ghost" id="adminBtn" type="button">管理员登录</button>
           </div>
         </header>
@@ -965,6 +966,7 @@
       // Supabase REST config
       const SUPABASE_URL = 'https://youwcvqibzscimrcumej.supabase.co';
       const SUPABASE_ANON_KEY = 'sb_publishable__IxFWKd1RZG2qnXRKg5uhg_lxIhgDSx';
+      const LEGACY_FILE = 'MindBack产品看板_部署版%20(13).html';
 
       const app = {
         activeTab: 'thisweek',
@@ -2026,6 +2028,7 @@
       }
 
       $('refreshBtn').addEventListener('click', ()=> refresh().catch(e=>{ console.warn(e); toast('bad','刷新失败'); }));
+      $('legacyBtn').addEventListener('click', ()=> window.open(LEGACY_FILE, '_blank'));
       $('adminBtn').addEventListener('click', openLogin);
       $('loginCancel').addEventListener('click', closeLogin);
       $('loginSubmit').addEventListener('click', doLogin);
