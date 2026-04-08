@@ -416,6 +416,7 @@
       function statusLabel(s){
         return s==='done'?'完成'
           : s==='prog'?'进行中'
+          : s==='test'?'测试中'
           : s==='risk'?'风险'
           : s==='block'?'阻塞'
           : s==='ns'?'待启动'
@@ -425,6 +426,7 @@
       function statusClass(s){
         return s==='done'?'done'
           : s==='prog'?'prog'
+          : s==='test'?'prog'
           : s==='risk'?'risk'
           : s==='block'?'block'
           : 'ns';
