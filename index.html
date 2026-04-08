@@ -918,6 +918,7 @@
           <div class="header-right">
             <span id="todayStr">—</span>
             <button class="btn ghost" id="refreshBtn" type="button">刷新</button>
+            <button class="btn ghost" id="syncBtn" type="button">同步</button>
             <button class="btn ghost" id="legacyBtn" type="button">回到旧版</button>
             <button class="btn ghost" id="adminBtn" type="button">管理员登录</button>
           </div>
@@ -1249,10 +1250,11 @@
         const adminBtn = $('adminBtn');
         if(adminBtn) adminBtn.textContent = app.accessToken ? '已登录 ✓' : '管理员登录';
 
-        const refreshBtn = $('refreshBtn');
-        if(refreshBtn){
+        const syncBtn = $('syncBtn');
+        if(syncBtn){
           const n = (app.syncQueue || []).length;
-          refreshBtn.textContent = n > 0 ? `同步(${n})` : '刷新';
+          syncBtn.textContent = n > 0 ? `同步(${n})` : '同步';
+          syncBtn.title = n > 0 ? '将待同步变更写回后端' : '当前没有待同步变更';
         }
       }
 
@@ -2279,6 +2281,7 @@
       }
 
       $('refreshBtn').addEventListener('click', ()=> refresh().catch(e=>{ console.warn(e); toast('bad','刷新失败'); }));
+      $('syncBtn').addEventListener('click', ()=> syncNow().catch(e=>{ console.warn(e); toast('bad','同步失败'); }));
       $('legacyBtn').addEventListener('click', ()=> window.open(LEGACY_FILE, '_blank'));
       $('adminBtn').addEventListener('click', openLogin);
       $('loginCancel').addEventListener('click', closeLogin);
