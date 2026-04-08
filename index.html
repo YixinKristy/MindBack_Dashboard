@@ -479,20 +479,51 @@
           const w = (v2.weeks||[]).find(x=>x.id===selId) || (v2.weeks||[])[0];
           if(!w){ target.innerHTML = `<div class="card">暂无周数据</div>`; return; }
           target.innerHTML = renderWeekDetailCard(v2, w, updatedAt);
-          if(app.isAdmin){ bindWeekEdits(); bindMonthEdits(v2); }
+          if(app.isAdmin){ bindWeekEdits(); bindMonthPlansEdits(v2, w.month); }
+        }
+      }
+
+      function bindMonthPlansEdits(v2, monthKey){
+        const mk = monthKey || '';
+        if(!v2.monthPlans || typeof v2.monthPlans !== 'object') v2.monthPlans = {};
+        const titleEl = document.querySelector(`[data-month-title="${CSS.escape(mk || 'month')}"]`);
+        const progEl = document.querySelector(`[data-month-progress="${CSS.escape(mk || 'month')}"]`);
+        if(titleEl){
+          titleEl.addEventListener('input', ()=>{
+            if(!v2.monthPlans[mk]) v2.monthPlans[mk] = { title: '', progress: null };
+            v2.monthPlans[mk].title = String(titleEl.value || '').trim();
+            app.isDirty = true;
+            updateSaveBtn();
+            renderSidebarMonth(app.draft);
+          });
+        }
+        if(progEl){
+          progEl.addEventListener('input', ()=>{
+            if(!v2.monthPlans[mk]) v2.monthPlans[mk] = { title: '', progress: null };
+            const val = String(progEl.value || '').trim();
+            const num = val === '' ? null : Number(val);
+            v2.monthPlans[mk].progress = Number.isFinite(num) ? Math.max(0, Math.min(100, num)) : null;
+            app.isDirty = true;
+            updateSaveBtn();
+            renderSidebarMonth(app.draft);
+          });
         }
       }
 
       function renderSidebarMonth(v2){
         const el = $('sidebarMonth');
         if(!el) return;
-        const title = v2.month?.title || '';
-        const progress = Number.isFinite(v2.month?.progress) ? v2.month.progress : null;
+        const selId = app.selectedWeekId || currentWeekId(v2.weeks||[]);
+        const w = (v2.weeks||[]).find(x=>x.id===selId) || (v2.weeks||[])[0];
+        const monthKey = w?.month || '';
+        const mp = getMonthPlan(v2, monthKey);
+        const title = mp?.title || '';
+        const progress = Number.isFinite(mp?.progress) ? mp.progress : null;
         const pct = progress===null ? '—' : `${Math.round(progress)}%`;
         const barW = progress===null ? 0 : Math.min(100, Math.max(0, progress));
         el.innerHTML = `
           <div class="side-month">
-            <div class="lbl">本月目标</div>
+            <div class="lbl">${monthKey ? escapeHtml(monthKey) + ' · 月目标' : '本月目标'}</div>
             <div class="txt" title="${escapeHtml(title)}">${title ? escapeHtml(title) : '（待填写）'}</div>
             <div class="side-bar">
               <div class="bar"><i style="width:${barW}%"></i></div>
@@ -541,8 +572,10 @@
         const curId = currentWeekId(v2.weeks||[]);
         const isCur = w.id === curId;
         const badge = isCur ? `<span class="ov-badge-week">本周</span>` : '';
+        const monthKey = w.month || '';
         const goal = w.goal || '';
         const criteria = w.criteria || '';
+        const monthPlanView = renderMonthPlanCard(v2, monthKey);
         const goalView = app.isAdmin
           ? `<div class="card" style="margin:12px 0"><div class="muted" style="font-size:11px;letter-spacing:.8px;text-transform:uppercase">本周目标</div><textarea class="edit-area" data-week-goal="${escapeHtml(w.id)}">${escapeHtml(goal)}</textarea></div>`
           : `<div class="card" style="margin:12px 0"><div class="muted" style="font-size:11px;letter-spacing:.8px;text-transform:uppercase">本周目标</div><div style="margin-top:8px;font-size:14px;line-height:1.6">${goal ? escapeHtml(goal) : '<span class="muted">（待填写）</span>'}</div></div>`;
@@ -564,6 +597,7 @@
               <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${badge} ${escapeHtml(w.month)} · ${escapeHtml(shortRangeLabel(w))}</div>
               <div style="color:var(--blue);font-weight:700">整体进度 —</div>
             </div>
+            ${monthPlanView}
             ${goalView}
             ${critView}
 
@@ -587,15 +621,67 @@
       }
 
       function bindMonthEdits(v2){
-        const monthInput = $('monthTitleInput');
-        if(monthInput){
-          monthInput.addEventListener('input', ()=>{
-            app.draft.month.title = monthInput.value.trim();
-            app.isDirty = true;
-            updateSaveBtn();
-            renderSidebarMonth(app.draft);
-          });
+        // deprecated: month goal now lives per-month under v2.monthPlans, bound in renderMonthPlanCard()
+      }
+
+      function getMonthPlan(v2, monthKey){
+        if(!v2 || typeof v2 !== 'object') return { title: '', progress: null };
+        if(!v2.monthPlans || typeof v2.monthPlans !== 'object') v2.monthPlans = {};
+        const mk = monthKey || '';
+        const mp = mk && v2.monthPlans[mk] ? v2.monthPlans[mk] : null;
+        if(mp && typeof mp === 'object'){
+          return {
+            title: String(mp.title ?? ''),
+            progress: Number.isFinite(mp.progress) ? mp.progress : null,
+          };
         }
+        // fallback: legacy single month field (旧快照兼容)
+        return {
+          title: String(v2.month?.title ?? ''),
+          progress: Number.isFinite(v2.month?.progress) ? v2.month.progress : null,
+        };
+      }
+
+      function renderMonthPlanCard(v2, monthKey){
+        const mk = monthKey || '';
+        const mp = getMonthPlan(v2, mk);
+        const title = mp.title || '';
+        const progress = Number.isFinite(mp.progress) ? mp.progress : null;
+        const pct = progress===null ? '—' : `${Math.round(progress)}%`;
+        const barW = progress===null ? 0 : Math.min(100, Math.max(0, progress));
+        const keyEsc = escapeHtml(mk || 'month');
+        if(app.isAdmin){
+          // 输入绑定：用 data-month-key 区分不同月份
+          return `
+            <div class="card" style="margin:12px 0">
+              <div class="row" style="align-items:flex-end">
+                <div>
+                  <div class="muted" style="font-size:11px;letter-spacing:.8px;text-transform:uppercase">${mk ? escapeHtml(mk) + ' · 月目标' : '本月目标'}</div>
+                  <textarea class="edit-area" style="margin-top:8px" data-month-title="${keyEsc}" placeholder="填写本月目标（可多行）">${escapeHtml(title)}</textarea>
+                </div>
+                <div style="min-width:150px;text-align:right">
+                  <div class="muted" style="font-size:11px;letter-spacing:.8px;text-transform:uppercase">进度</div>
+                  <input class="edit-input" type="number" min="0" max="100" step="1" value="${progress===null?'':Math.round(progress)}" data-month-progress="${keyEsc}" placeholder="%" style="margin-top:8px;width:120px;text-align:right" />
+                  <div class="small muted" style="margin-top:6px">${pct}</div>
+                </div>
+              </div>
+              <div class="side-bar" style="margin-top:10px">
+                <div class="bar"><i style="width:${barW}%"></i></div>
+                <div class="pct">${pct}</div>
+              </div>
+            </div>
+          `;
+        }
+        return `
+          <div class="card" style="margin:12px 0">
+            <div class="muted" style="font-size:11px;letter-spacing:.8px;text-transform:uppercase">${mk ? escapeHtml(mk) + ' · 月目标' : '本月目标'}</div>
+            <div style="margin-top:8px;font-size:14px;line-height:1.6">${title ? escapeHtml(title) : '<span class="muted">（待填写）</span>'}</div>
+            <div class="side-bar" style="margin-top:10px">
+              <div class="bar"><i style="width:${barW}%"></i></div>
+              <div class="pct">${pct}</div>
+            </div>
+          </div>
+        `;
       }
 
       function renderPlaceholder(id, title, desc){
@@ -644,6 +730,7 @@
       function ensureV2Shape(v2){
         if(!v2 || typeof v2 !== 'object') return v2;
         if(!v2.month) v2.month = { title: '', progress: null };
+        if(!v2.monthPlans || typeof v2.monthPlans !== 'object') v2.monthPlans = {};
         if(!Array.isArray(v2.weeks)) v2.weeks = buildDefaultWeeks();
         v2.weeks = v2.weeks.map(ensureWeekShape);
         if(!v2.inbox) v2.inbox = { items: [] };
@@ -793,6 +880,136 @@
         return rows && rows[0] ? rows[0] : null;
       }
 
+      async function fetchTable(table, select='*', extraQuery=''){
+        const q = extraQuery ? '&' + extraQuery.replace(/^\&+/, '') : '';
+        const url = `${SUPABASE_URL}/rest/v1/${encodeURIComponent(table)}?select=${encodeURIComponent(select)}${q}`;
+        const res = await fetch(url, {
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: 'Bearer ' + SUPABASE_ANON_KEY,
+          }
+        });
+        if(!res.ok) throw new Error(`Supabase table fetch failed: ${table} ${res.status} ${res.statusText}`);
+        return await res.json();
+      }
+
+      async function loadLegacyFromTables(){
+        const [
+          tasksRaw,
+          bugsRaw,
+          peopleRaw,
+          opsRaw,
+          milestonesRaw,
+          backlogRaw,
+          techDebtRaw,
+        ] = await Promise.all([
+          fetchTable('tasks', '*', 'order=id.asc'),
+          fetchTable('bugs', '*', 'order=id.asc'),
+          fetchTable('people', '*', 'order=name.asc'),
+          fetchTable('ops_actions', '*', 'order=id.asc'),
+          fetchTable('milestones', '*', 'order=sort_order.asc'),
+          fetchTable('backlog', '*', 'order=id.asc'),
+          fetchTable('tech_debt', '*', 'order=id.asc'),
+        ]);
+
+        const tasks = (Array.isArray(tasksRaw) ? tasksRaw : []).map(t=>({
+          id: t.id,
+          name: t.name,
+          pri: t.priority,
+          plat: Array.isArray(t.platforms) ? t.platforms : [],
+          owners: Array.isArray(t.owners) ? t.owners : [],
+          status: t.status,
+          type: t.task_type,
+          src: t.source,
+          note: t.note || '',
+          version: t.version || '',
+          thisWeek: !!t.this_week,
+          milestoneId: t.milestone_id || null,
+          isArchived: !!t.is_archived,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at,
+        }));
+
+        const bugs = (Array.isArray(bugsRaw) ? bugsRaw : []).map(b=>({
+          id: b.id,
+          severity: b.severity,
+          name: b.name,
+          plat: Array.isArray(b.platforms) ? b.platforms : [],
+          owners: Array.isArray(b.owners) ? b.owners : [],
+          status: b.status,
+          src: b.source,
+          note: b.note || '',
+          isArchived: !!b.is_archived,
+          createdAt: b.created_at,
+          updatedAt: b.updated_at,
+        }));
+
+        const ops = (Array.isArray(opsRaw) ? opsRaw : []).map(o=>({
+          id: o.id,
+          cat: o.category,
+          name: o.name,
+          status: o.status,
+          date: o.target_date || '',
+          channel: o.channel || '',
+          owners: Array.isArray(o.owners) ? o.owners : [],
+          note: o.note || '',
+          isArchived: !!o.is_archived,
+          createdAt: o.created_at,
+          updatedAt: o.updated_at,
+        }));
+
+        const milestones = (Array.isArray(milestonesRaw) ? milestonesRaw : []).map(m=>({
+          id: m.id,
+          num: m.num,
+          month: m.month || '',
+          dateShort: m.date_short || '',
+          dateFull: m.date_full || '',
+          title: m.title,
+          tags: Array.isArray(m.tags) ? m.tags : [],
+          cost: m.cost || '',
+          status: m.status,
+          features: m.features || '',
+          sortOrder: Number.isFinite(m.sort_order) ? m.sort_order : 0,
+          createdAt: m.created_at,
+          updatedAt: m.updated_at,
+        }));
+
+        const people = (Array.isArray(peopleRaw) ? peopleRaw : []).map(p=>({
+          id: p.id,
+          name: p.name,
+          role: p.role || '',
+          load: Number.isFinite(p.workload) ? p.workload : 0,
+          isActive: p.is_active !== false,
+          createdAt: p.created_at,
+          updatedAt: p.updated_at,
+        }));
+
+        const backlog = (Array.isArray(backlogRaw) ? backlogRaw : []).map(x=>({
+          id: x.id,
+          name: x.name,
+          pri: x.priority,
+          plat: Array.isArray(x.platforms) ? x.platforms : [],
+          note: x.note || '',
+          src: x.source,
+          isArchived: !!x.is_archived,
+          createdAt: x.created_at,
+          updatedAt: x.updated_at,
+        }));
+
+        const debtItems = (Array.isArray(techDebtRaw) ? techDebtRaw : []).map(d=>({
+          id: d.id,
+          name: d.name,
+          owner: d.owner || '',
+          pct: Number.isFinite(d.progress) ? d.progress : 0,
+          note: d.note || '',
+          isArchived: !!d.is_archived,
+          createdAt: d.created_at,
+          updatedAt: d.updated_at,
+        }));
+
+        return { tasks, bugs, ops, milestones, people, backlog, debtItems };
+      }
+
       async function init(){
         $('legacyBtn').addEventListener('click', ()=> window.open(LEGACY_FILE, '_blank'));
         renderSidebarNav('overview');
@@ -810,21 +1027,31 @@
           const updatedAt = row && row.updated_at ? row.updated_at : null;
           $('lastUpdated').textContent = fmtTime(updatedAt);
 
+          let draft = deepClone(ensureV2Shape(normalizeSnapshot((data && typeof data === 'object') ? data : {})));
+          let legacyFromTables = null;
+          try{
+            legacyFromTables = await loadLegacyFromTables();
+          }catch(e){
+            console.warn('loadLegacyFromTables failed, fallback to snapshot legacy', e);
+          }
+
+          if(legacyFromTables){
+            draft.legacy = legacyFromTables;
+          }
+
           if(data && typeof data === 'object'){
-            setDbStatus('ok', 'DB 已连接');
+            setDbStatus('ok', legacyFromTables ? 'DB 已连接（表+编排）' : 'DB 已连接（快照）');
             app.snapshotRow = row;
             app.snapshot = data;
-            app.draft = deepClone(ensureV2Shape(normalizeSnapshot(data)));
-            renderOverview(app.draft, updatedAt);
-            renderFeaturesTab(app.draft);
           }else{
-            setDbStatus('warn', 'DB 已连接（数据为空）');
+            setDbStatus('warn', legacyFromTables ? 'DB 已连接（表）' : 'DB 已连接（数据为空）');
             app.snapshotRow = row;
             app.snapshot = {};
-            app.draft = deepClone(ensureV2Shape(normalizeSnapshot({})));
-            renderOverview(app.draft, updatedAt);
-            renderFeaturesTab(app.draft);
           }
+
+          app.draft = draft;
+          renderOverview(app.draft, updatedAt);
+          renderFeaturesTab(app.draft);
         }catch(e){
           console.warn(e);
           setDbStatus('bad', 'DB 离线');
@@ -1142,15 +1369,15 @@
           const dot = `<span class="cap-dot" style="background:${statusDotColor(item.status)}"></span>`;
           const plat = platMetaForItem(item);
           const statusBadge = `<span class="status ${statusClass(item.status)}" style="font-size:10px;padding:2px 8px;margin-left:8px">${statusLabel(item.status)}</span>`;
-          const goal = item.note ? `<div style="font-size:11px;color:#6b7280;margin-top:4px;line-height:1.4">${escapeHtml(item.note)}</div>` : '';
+          const goal = item.note ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:6px;line-height:1.45">${escapeHtml(item.note)}</div>` : '';
           return `
-            <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px">
+            <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;padding:12px 14px">
               <div style="display:flex;align-items:center;gap:8px">
                 ${dot}
                 <span style="font-weight:700;font-size:13px">${escapeHtml(item.name||'#')}</span>
                 ${statusBadge}
               </div>
-              ${plat ? `<div style="font-size:11px;color:#9ca3af;margin-top:4px">${escapeHtml(plat)}</div>` : ''}
+              ${plat ? `<div style="font-size:11px;color:var(--text-muted);margin-top:6px">${escapeHtml(plat)}</div>` : ''}
               ${goal}
             </div>
           `;
@@ -1168,10 +1395,10 @@
           const owner = Array.isArray(item.owners) && item.owners.length ? ` · ${item.owners.join('、')}` : '';
           const statusBadge = `<span class="status ${statusClass(item.status)}" style="font-size:10px;padding:2px 8px">${statusLabel(item.status)}</span>`;
           return `
-            <div class="bug-chip ${cls}" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px">
+            <div class="bug-chip ${cls}" style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:12px">
               <div style="flex:1">
                 <div>${icon} <b>${(sev||'').toUpperCase()}</b> ${escapeHtml(item.name||'Bug')}</div>
-                <div style="font-size:11px;opacity:.85;margin-top:2px">${escapeHtml(owner)}</div>
+                <div style="font-size:11px;opacity:.85;margin-top:6px;color:var(--text-secondary)">${escapeHtml(owner)}</div>
               </div>
               ${statusBadge}
             </div>
