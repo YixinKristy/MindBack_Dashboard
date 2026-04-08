@@ -267,16 +267,23 @@
 
       /* ── ThisWeek: focus cards ── */
       .focus-grid{
-        display:grid;
-        grid-template-columns: repeat(3, 1fr);
+        display:flex;
         gap: 12px;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        scroll-snap-type: x proximity;
       }
+      .focus-grid::-webkit-scrollbar{ height: 8px; }
+      .focus-grid::-webkit-scrollbar-thumb{ background:#2e2f3a; border-radius: 999px; }
+      .focus-grid::-webkit-scrollbar-track{ background:#111319; }
       .focus-card{
+        flex: 0 0 360px;
         background: var(--surface);
         border-radius: var(--radius-lg);
         padding: 24px;
         transition: background .15s ease, transform .15s ease;
         cursor:pointer;
+        scroll-snap-align: start;
       }
       .focus-card:hover{ background: var(--surface-raised); transform: translateY(-2px); }
       .focus-top{
@@ -1437,6 +1444,7 @@
         const dueValue = kind==='task' ? (row.due_date || '') : kind==='bug' ? (row.due_date || '') : kind==='ops' ? (row.target_date || '') : '';
         const noteValue = kind==='version' ? (row.release_notes || row.notes || '') : (row.note || '');
         const moduleValue = row.module || '';
+        const ownersValue = Array.isArray(row.owners) ? row.owners.join(',') : '';
 
         body.innerHTML = `
           <div class="field">
@@ -1469,6 +1477,13 @@
             <div class="field">
               <div class="label">模块</div>
               <input class="input" id="f_module" value="${esc(moduleValue)}" placeholder="例如：功能开发 / Bug / 运营" />
+            </div>
+          ` : ''}
+
+          ${kind==='task' ? `
+            <div class="field">
+              <div class="label">负责人</div>
+              <input class="input" id="f_owners" value="${esc(ownersValue)}" placeholder="例如：择良, 黄镇威（逗号分隔）" />
             </div>
           ` : ''}
 
@@ -1514,6 +1529,12 @@
         const note = $('f_note') ? $('f_note').value : '';
         const module = $('f_module') ? $('f_module').value.trim() : null;
         const focus = $('f_focus') ? ($('f_focus').value === 'true') : null;
+        const owners = $('f_owners')
+          ? String($('f_owners').value || '')
+            .split(',')
+            .map(s=>s.trim())
+            .filter(Boolean)
+          : null;
 
         const before = structuredClone(findRow(kind, row.id));
         try{
@@ -1527,7 +1548,7 @@
           }else if(kind==='bug'){
             applyLocal(kind, row.id, { name, status, due_date: due, note, module, is_focus: focus });
           }else if(kind==='task'){
-            applyLocal(kind, row.id, { name, status, priority, due_date: due, note, module, is_focus: focus });
+            applyLocal(kind, row.id, { name, status, priority, due_date: due, note, module, is_focus: focus, owners: owners || [] });
           }else if(kind==='backlog'){
             applyLocal(kind, row.id, { name, priority, note, module });
           }
@@ -1562,6 +1583,7 @@
             patch.note = note;
             patch.module = module;
             patch.is_focus = focus;
+            patch.owners = owners || [];
           }else if(kind==='backlog'){
             patch.name = name;
             patch.priority = priority;
@@ -1847,7 +1869,7 @@
         tasks.filter(t=>t.is_focus).forEach(t=> focusItems.push({ kind:'task', row:t, module: t.module || '功能开发' }));
         bugs.filter(b=>b.is_focus).forEach(b=> focusItems.push({ kind:'bug', row:b, module: b.module || 'Bug' }));
         ops.filter(o=>o.is_focus).forEach(o=> focusItems.push({ kind:'ops', row:o, module: o.category || '运营' }));
-        const focus = focusItems.slice(0,3);
+        const focus = focusItems;
 
         const devList = tasks.slice().sort((a,b)=> priRank(a.priority)-priRank(b.priority));
 
