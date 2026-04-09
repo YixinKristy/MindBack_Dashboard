@@ -1353,6 +1353,32 @@
       </div>
     </div>
 
+    <!-- Date / range picker (for ops target_date) -->
+    <div class="modal" id="datePickerModal" aria-hidden="true">
+      <div class="modal-card" role="dialog" aria-modal="true" aria-label="选择日期">
+        <div class="modal-title">选择目标日期</div>
+        <div style="display:flex;gap:8px;margin-top:6px;">
+          <button class="btn ghost" id="dpModeSingle" type="button">单日</button>
+          <button class="btn ghost" id="dpModeRange" type="button">范围</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
+          <div class="field" style="margin:0;">
+            <div class="label">开始</div>
+            <input class="input" id="dpStart" type="date" />
+          </div>
+          <div class="field" style="margin:0;">
+            <div class="label">结束</div>
+            <input class="input" id="dpEnd" type="date" />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn ghost" id="dpClear" type="button">清空</button>
+          <button class="btn ghost" id="dpCancel" type="button">取消</button>
+          <button class="btn primary" id="dpDone" type="button">确定</button>
+        </div>
+      </div>
+    </div>
+
     <div class="toast" id="toast"></div>
 
     <script>
@@ -1375,6 +1401,7 @@
         pendingCreateDefaults: null,
         pendingVersionPick: null, // { elId, platform }
         sidebarCollapsed: false,
+        datePicker: { open:false, targetId:null, mode:'single' },
       };
 
       const TABS = [
@@ -1497,6 +1524,28 @@
         const m1 = s.getMonth()+1, d1 = s.getDate();
         const m2 = e.getMonth()+1, d2 = e.getDate();
         return `${m1}月${d1}日 - ${m2}月${d2}日`;
+      }
+      function firstYmdFromMaybeRange(s){
+        const raw = String(s||'').trim();
+        if(!raw) return '';
+        if(raw.includes('~')) return raw.split('~')[0].trim();
+        if(raw.includes(' - ')) return raw.split(' - ')[0].trim();
+        return raw;
+      }
+      function formatYmdZh(s){
+        const d = parseYmdLocal(s);
+        if(!d) return String(s||'').trim();
+        return `${d.getMonth()+1}月${d.getDate()}日`;
+      }
+      function formatDateOrRange(s){
+        const raw = String(s||'').trim();
+        if(!raw) return '';
+        if(raw.includes('~')){
+          const [a,b] = raw.split('~').map(x=>x.trim());
+          if(a && b) return `${formatYmdZh(a)} - ${formatYmdZh(b)}`;
+          return formatYmdZh(a || b);
+        }
+        return formatYmdZh(raw);
       }
       function ymd(d){
         const pad = (n)=> String(n).padStart(2,'0');
@@ -2066,6 +2115,12 @@
           const opts = ['dev','testing','submitted','released'];
           return opts.map(s=>`<option value="${s}" ${s===current?'selected':''}>${esc(versionBadge(s).label)}</option>`).join('');
         }
+        if(kind==='ops'){
+          const cur = current || 'plan';
+          const opts = ['plan','prog','done','pause'];
+          const labels = { plan:'计划中', prog:'进行中', done:'已完成', pause:'暂停' };
+          return opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(labels[s] || s)}</option>`).join('');
+        }
         const opts = ['ns','prog','block','done'];
         return opts.map(s=>`<option value="${s}" ${s===current?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('');
       }
@@ -2129,10 +2184,16 @@
             ` : `<div></div>`}
           </div>
 
-          ${(kind==='task' || kind==='bug' || kind==='ops') ? `
+          ${(kind==='task' || kind==='bug') ? `
             <div class="field">
               <div class="label">${dueLabel}</div>
               <input class="input" id="f_due" type="date" value="${esc(dueValue)}" />
+            </div>
+          ` : ''}
+          ${kind==='ops' ? `
+            <div class="field">
+              <div class="label">${dueLabel}</div>
+              <input class="input" id="f_due" value="${esc(dueValue)}" placeholder="点击选择日期或范围…" readonly />
             </div>
           ` : ''}
 
@@ -2265,6 +2326,14 @@
           if(wk){
             wk.addEventListener('click', ()=>{
               openWeekPicker('f_week_start');
+            });
+          }
+        }
+        if(kind==='ops'){
+          const t = $('f_due');
+          if(t){
+            t.addEventListener('click', ()=>{
+              openDateOrRangePicker('f_due');
             });
           }
         }
@@ -2681,7 +2750,7 @@
             </div>
             <div class="field">
               <div class="label">目标日期</div>
-              <input class="input" id="c_target" type="date" />
+              <input class="input" id="c_target" value="" placeholder="点击选择日期或范围…" readonly />
             </div>
             <div class="field">
               <div class="label">渠道</div>
@@ -2751,6 +2820,14 @@
         $('createModalBody').innerHTML = buildCreateFormHTML(kind);
         $('createModal').classList.add('open');
         $('createModal').setAttribute('aria-hidden', 'false');
+        if(kind==='ops'){
+          const t = $('c_target');
+          if(t){
+            t.readOnly = true;
+            t.placeholder = '点击选择日期或范围…';
+            t.addEventListener('click', ()=> openDateOrRangePicker('c_target'));
+          }
+        }
         setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
       }
 
@@ -2766,6 +2843,14 @@
         $('createModalBody').innerHTML = buildCreateFormHTML(kind, app.pendingCreateDefaults);
         $('createModal').classList.add('open');
         $('createModal').setAttribute('aria-hidden', 'false');
+        if(kind==='ops'){
+          const t = $('c_target');
+          if(t){
+            t.readOnly = true;
+            t.placeholder = '点击选择日期或范围…';
+            t.addEventListener('click', ()=> openDateOrRangePicker('c_target'));
+          }
+        }
         setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
 
         // create modal 内的版本选择也支持“+ 新增版本…”
@@ -2852,6 +2937,44 @@
             renderWeekPicker();
           });
         });
+      }
+
+      // --- Date / range picker (store 'YYYY-MM-DD' or 'YYYY-MM-DD~YYYY-MM-DD') ---
+      function parseDateOrRange(raw){
+        const s = String(raw||'').trim();
+        if(!s) return { mode:'single', start:'', end:'' };
+        if(s.includes('~')){
+          const [a,b] = s.split('~').map(x=>x.trim());
+          return { mode:'range', start:a||'', end:b||'' };
+        }
+        return { mode:'single', start:s, end:'' };
+      }
+      function setDatePickerMode(mode){
+        app.datePicker.mode = (mode === 'range') ? 'range' : 'single';
+        const isRange = app.datePicker.mode === 'range';
+        if($('dpModeSingle')) $('dpModeSingle').classList.toggle('primary', !isRange);
+        if($('dpModeRange')) $('dpModeRange').classList.toggle('primary', isRange);
+        if($('dpEnd')){
+          $('dpEnd').disabled = !isRange;
+          $('dpEnd').style.opacity = isRange ? '1' : '.6';
+        }
+      }
+      function openDateOrRangePicker(targetId){
+        app.datePicker.open = true;
+        app.datePicker.targetId = targetId;
+        const cur = ($(targetId)?.value || '').trim();
+        const parsed = parseDateOrRange(cur);
+        setDatePickerMode(parsed.mode);
+        if($('dpStart')) $('dpStart').value = parsed.start || '';
+        if($('dpEnd')) $('dpEnd').value = parsed.end || '';
+        $('datePickerModal').classList.add('open');
+        $('datePickerModal').setAttribute('aria-hidden','false');
+      }
+      function closeDateOrRangePicker(){
+        app.datePicker.open = false;
+        app.datePicker.targetId = null;
+        $('datePickerModal').classList.remove('open');
+        $('datePickerModal').setAttribute('aria-hidden','true');
       }
 
       function closeCreateModal(){
@@ -3184,7 +3307,7 @@
               ${focus.map(it=>{
                 const s = it.row.status;
                 const b = taskStatusBadge(s);
-                const due = it.kind==='ops' ? (it.row.target_date || '—') : (it.row.due_date || '—');
+                const due = it.kind==='ops' ? (formatDateOrRange(it.row.target_date) || '—') : (it.row.due_date || '—');
                 const name = it.kind==='task' ? it.row.name : it.row.name;
                 const mod = it.kind==='task' ? (it.row.module || '功能开发') : (it.kind==='bug' ? 'Bug' : (it.row.category || '运营'));
                 return `
@@ -3439,7 +3562,7 @@
           if(sortKey === 'due'){
             const get = (r)=>{
               const raw = kind==='ops' ? (r?.target_date || '') : (r?.due_date || '');
-              const d = parseYmdLocal(raw);
+              const d = parseYmdLocal(firstYmdFromMaybeRange(raw));
               return d ? d.getTime() : Number.POSITIVE_INFINITY;
             };
             arr.sort((a,b)=> get(a) - get(b));
@@ -3473,7 +3596,7 @@
               <div class="ver-rel-list">
                 ${rows.map(r=>{
                   const badge = (kind==='ops') ? opsStatusBadge(r.status) : taskStatusBadge(r.status);
-                  const sub = (kind==='ops') ? (r.target_date || '') : (r.due_date || '');
+                  const sub = (kind==='ops') ? formatDateOrRange(r.target_date || '') : (r.due_date || '');
                   return `
                     <div class="ver-rel-item" data-open="${kind}:${esc(r.id)}">
                       <div class="ver-rel-name">${esc(r.name || '未命名')}</div>
@@ -4097,6 +4220,7 @@
       $('loginModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeLogin(); });
       $('createModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeCreateModal(); });
       $('weekPickerModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeWeekPicker(); });
+      $('datePickerModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeDateOrRangePicker(); });
       $('createCancel').addEventListener('click', closeCreateModal);
       $('createSubmit').addEventListener('click', ()=> submitCreate().catch(e=>{ console.warn(e); toast('bad','新增失败'); }));
       $('wkPrev').addEventListener('click', ()=>{ weekPicker.cursor = new Date(weekPicker.cursor.getFullYear(), weekPicker.cursor.getMonth()-1, 1); renderWeekPicker(); });
@@ -4116,6 +4240,36 @@
           }
         }
         closeWeekPicker();
+      });
+
+      $('dpCancel').addEventListener('click', closeDateOrRangePicker);
+      $('dpModeSingle').addEventListener('click', ()=> setDatePickerMode('single'));
+      $('dpModeRange').addEventListener('click', ()=> setDatePickerMode('range'));
+      $('dpClear').addEventListener('click', ()=>{
+        const id = app.datePicker.targetId;
+        if(id){
+          const el = $(id);
+          if(el) el.value = '';
+        }
+        closeDateOrRangePicker();
+      });
+      $('dpDone').addEventListener('click', ()=>{
+        const id = app.datePicker.targetId;
+        if(!id){ closeDateOrRangePicker(); return; }
+        const el = $(id);
+        if(!el){ closeDateOrRangePicker(); return; }
+        const s = ($('dpStart') && $('dpStart').value) ? $('dpStart').value.trim() : '';
+        const e = ($('dpEnd') && $('dpEnd').value) ? $('dpEnd').value.trim() : '';
+        if(app.datePicker.mode === 'range'){
+          if(s && e){
+            el.value = `${s}~${e}`;
+          }else{
+            el.value = s || e || '';
+          }
+        }else{
+          el.value = s || '';
+        }
+        closeDateOrRangePicker();
       });
 
       (async function init(){
