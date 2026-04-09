@@ -1241,6 +1241,7 @@
         syncQueue: [],    // { op:'patch'|'insert'|'delete', table, idField, idValue, patch|row, tempId? }
         pendingCreateKind: null,
         pendingCreateDefaults: null,
+        pendingVersionPick: null, // { elId, platform }
         sidebarCollapsed: false,
       };
 
@@ -1477,6 +1478,7 @@
           const lab = (v.version_num || '').trim() || ('#' + v.id);
           html += `<option value="${v.id}"${sel}>${esc(lab)}</option>`;
         }
+        html += `<option value="__new__">+ 新增版本…</option>`;
         return html;
       }
 
@@ -2094,6 +2096,19 @@
         if($('drawerDelete')) $('drawerDelete').onclick = ()=> drawerDelete();
         if($('drawerMove')) $('drawerMove').onclick = ()=> moveTaskToBacklog();
         if($('drawerToWeek')) $('drawerToWeek').onclick = ()=> moveBacklogToThisWeek();
+
+        // 关联版本下拉支持“+ 新增版本…”
+        ['ios','android','web'].forEach(p=>{
+          const id = p==='ios' ? 'f_v_ios' : p==='android' ? 'f_v_android' : 'f_v_web';
+          const el = $(id);
+          if(!el) return;
+          el.addEventListener('change', ()=>{
+            if(el.value === '__new__'){
+              app.pendingVersionPick = { elId: id, platform: p };
+              openCreateModalWithDefaults('version', { platform: p });
+            }
+          });
+        });
       }
 
       async function drawerSave(){
@@ -2578,11 +2593,25 @@
         $('createModal').classList.add('open');
         $('createModal').setAttribute('aria-hidden', 'false');
         setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
+
+        // create modal 内的版本选择也支持“+ 新增版本…”
+        ['ios','android','web'].forEach(p=>{
+          const id = p==='ios' ? 'c_v_ios' : p==='android' ? 'c_v_android' : 'c_v_web';
+          const el = $(id);
+          if(!el) return;
+          el.addEventListener('change', ()=>{
+            if(el.value === '__new__'){
+              app.pendingVersionPick = { elId: id, platform: p };
+              openCreateModalWithDefaults('version', { platform: p });
+            }
+          });
+        });
       }
 
       function closeCreateModal(){
         app.pendingCreateKind = null;
         app.pendingCreateDefaults = null;
+        // 不清 pendingVersionPick：用于提交后回填
         $('createModal').classList.remove('open');
         $('createModal').setAttribute('aria-hidden', 'true');
         $('createModalBody').innerHTML = '';
@@ -2618,7 +2647,15 @@
                 // 复用 replaceTempId 逻辑（versions 单独处理）
                 const idx = app.board.versions.findIndex(x=>x && String(x.id)===String(tmpId));
                 if(idx >= 0) app.board.versions[idx] = { ...app.board.versions[idx], ...created, id: created.id };
+                // 若来自“关联版本下拉”的新增，回填到对应下拉
+                if(app.pendingVersionPick?.elId){
+                  const sel = $(app.pendingVersionPick.elId);
+                  if(sel){
+                    sel.value = String(created.id);
+                  }
+                }
               }
+              app.pendingVersionPick = null;
               toast('ok','已新增版本');
               saveLocalDraft();
               await refreshRemote();
@@ -3018,7 +3055,10 @@
         const pNow = Math.min(pTotal, 12);
         const pct = Math.round((pNow/pTotal) * 100);
 
-        const versAll = (app.board.versions || []).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+        const versAll = (app.board.versions || [])
+          .filter(v=>v && v.platform === 'ios')
+          .slice()
+          .sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
         const now = new Date();
         const wStart = startOfWeekMonday(now);
         const wEnd = endOfWeekSunday(now);
