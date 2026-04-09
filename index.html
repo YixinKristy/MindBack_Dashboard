@@ -4134,7 +4134,7 @@
 
         const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
 
-        // 总览固定展示近三周：上周 / 本周 / 下周（各周取“最新的一个版本”；若缺失则降级补位）
+        // 总览固定展示近三周：上周 / 本周 / 下周（每周展示该周内所有端版本）
         const pickTop3 = ()=>{
           const weekStartOf = (v)=>{
             const d = weekDateOfVersion(v);
@@ -4154,45 +4154,20 @@
             if(!byWeek.has(k)) byWeek.set(k, []);
             byWeek.get(k).push(v);
           }
-          const pickOne = (k)=>{
-            const arr = (byWeek.get(k) || []).slice();
-            // 同一周多个版本时，取 sort_order 最大（最新）
-            arr.sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
-            return arr[0] || null;
-          };
-          const prev = pickOne(prevKey);
-          const cur = pickOne(curW);
-          const nxt = pickOne(nextKey);
+          const forWeek = (k)=> (byWeek.get(k) || []).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+          const prevArr = forWeek(prevKey);
+          const curArr = forWeek(curW);
+          const nextArr = forWeek(nextKey);
 
-          const chosen = [prev, cur, nxt].filter(Boolean);
-          // 若缺失（比如下周未规划），用“最近未来/最近过去”补齐到最多 3 个
-          if(chosen.length < 3){
-            const rest = versAll
-              .filter(v=>v && !chosen.some(x=>x.id===v.id))
-              .filter(v=>weekDateOfVersion(v))
-              .slice()
-              .sort((a,b)=>{
-                const da = weekDateOfVersion(a).getTime();
-                const db = weekDateOfVersion(b).getTime();
-                return da - db;
-              });
-            for(const v of rest){
-              if(chosen.length>=3) break;
-              chosen.push(v);
-            }
-          }
-
-          // 关键：本周需要展示“所有平台版本”，不能被 pickOne 挤掉
+          // 只渲染近三周：上周/本周/下周；每周内包含所有端版本
+          // 其它版本仍通过“历史版本/未来版本”折叠区查看
           const set = new Set([
-            ...chosen.map(v=>v.id),
-            // 上周/本周/下周：都展示该周内的全部版本（多平台不互相挤掉）
-            ...(byWeek.get(prevKey) || []).map(v=>v.id),
-            ...(byWeek.get(curW) || []).map(v=>v.id),
-            ...(byWeek.get(nextKey) || []).map(v=>v.id),
-            ...thisWeekStrict.map(v=>v.id),
+            ...prevArr.map(v=>v.id),
+            ...curArr.map(v=>v.id),
+            ...nextArr.map(v=>v.id),
           ]);
           const past = (groups.past||[]).filter(v=>set.has(v.id));
-          const thisweek = (thisWeekStrict||[]).filter(v=>set.has(v.id));
+          const thisweek = (groups.thisweek||[]).filter(v=>set.has(v.id));
           const future = (groups.future||[]).filter(v=>set.has(v.id));
           const other = (groups.other||[]).filter(v=>set.has(v.id));
           return { past, thisweek, future, other };
