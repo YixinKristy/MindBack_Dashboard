@@ -676,7 +676,12 @@
         color: var(--text-secondary);
         font-size: 12px;
         flex-shrink:0;
+        max-width: 88px;
+        overflow:hidden;
+        white-space:nowrap;
+        text-overflow:ellipsis;
       }
+      .ver-related .badge{ flex-shrink:0; white-space:nowrap; }
 
       /* ── Versions tab ── */
       .pill-tabs{
@@ -2129,8 +2134,13 @@
         if(idx >= 0) list[idx] = { ...list[idx], ...created };
       }
 
-      function buildCreateFormHTML(kind){
+      function buildCreateFormHTML(kind, defaults = null){
+        const d = defaults && typeof defaults === 'object' ? defaults : {};
         if(kind === 'task'){
+          const defModule = (d.module || '功能开发');
+          const defThisWeek = typeof d.this_week === 'boolean' ? String(d.this_week) : 'true';
+          const defFocus = typeof d.is_focus === 'boolean' ? String(d.is_focus) : 'false';
+          const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
           return `
             <div class="field">
               <div class="label">名称</div>
@@ -2150,7 +2160,7 @@
             </div>
             <div class="field">
               <div class="label">模块</div>
-              <input class="input" id="c_module" value="功能开发" placeholder="例如：功能开发" />
+              <input class="input" id="c_module" value="${esc(defModule)}" placeholder="例如：功能开发" />
             </div>
             <div class="field">
               <div class="label">截止日期</div>
@@ -2162,29 +2172,29 @@
             </div>
             <div class="field">
               <div class="label">关联版本 · iOS</div>
-              <select class="select" id="c_v_ios">${versionSelectOptions('ios', '')}</select>
+              <select class="select" id="c_v_ios">${versionSelectOptions('ios', sel('ios'))}</select>
             </div>
             <div class="field">
               <div class="label">关联版本 · 安卓</div>
-              <select class="select" id="c_v_android">${versionSelectOptions('android', '')}</select>
+              <select class="select" id="c_v_android">${versionSelectOptions('android', sel('android'))}</select>
             </div>
             <div class="field">
               <div class="label">关联版本 · Web</div>
-              <select class="select" id="c_v_web">${versionSelectOptions('web', '')}</select>
+              <select class="select" id="c_v_web">${versionSelectOptions('web', sel('web'))}</select>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="field">
                 <div class="label">列入本周跟进</div>
                 <select class="select" id="c_this_week">
-                  <option value="true" selected>是</option>
-                  <option value="false">否</option>
+                  <option value="true" ${defThisWeek==='true'?'selected':''}>是</option>
+                  <option value="false" ${defThisWeek==='false'?'selected':''}>否</option>
                 </select>
               </div>
               <div class="field">
                 <div class="label">本周重点</div>
                 <select class="select" id="c_is_focus">
-                  <option value="false" selected>否</option>
-                  <option value="true">是</option>
+                  <option value="false" ${defFocus==='false'?'selected':''}>否</option>
+                  <option value="true" ${defFocus==='true'?'selected':''}>是</option>
                 </select>
               </div>
             </div>
@@ -2195,6 +2205,7 @@
           `;
         }
         if(kind === 'bug'){
+          const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
           return `
             <div class="field">
               <div class="label">名称</div>
@@ -2223,6 +2234,18 @@
               <input class="input" id="c_due" />
             </div>
             <div class="field">
+              <div class="label">关联版本 · iOS</div>
+              <select class="select" id="c_v_ios">${versionSelectOptions('ios', sel('ios'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · 安卓</div>
+              <select class="select" id="c_v_android">${versionSelectOptions('android', sel('android'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · Web</div>
+              <select class="select" id="c_v_web">${versionSelectOptions('web', sel('web'))}</select>
+            </div>
+            <div class="field">
               <div class="label">本周重点</div>
               <select class="select" id="c_is_focus">
                 <option value="false" selected>否</option>
@@ -2236,6 +2259,7 @@
           `;
         }
         if(kind === 'ops'){
+          const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
           return `
             <div class="field">
               <div class="label">名称</div>
@@ -2267,6 +2291,18 @@
             <div class="field">
               <div class="label">渠道</div>
               <input class="input" id="c_channel" placeholder="可选" />
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · iOS（可选）</div>
+              <select class="select" id="c_v_ios">${versionSelectOptions('ios', sel('ios'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · 安卓（可选）</div>
+              <select class="select" id="c_v_android">${versionSelectOptions('android', sel('android'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · Web（可选）</div>
+              <select class="select" id="c_v_web">${versionSelectOptions('web', sel('web'))}</select>
             </div>
             <div class="field">
               <div class="label">本周重点</div>
@@ -2315,6 +2351,7 @@
         }
         const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog' };
         app.pendingCreateKind = kind;
+        app.pendingCreateDefaults = null;
         $('createModalTitle').textContent = titles[kind] || '新建';
         $('createModalBody').innerHTML = buildCreateFormHTML(kind);
         $('createModal').classList.add('open');
@@ -2322,8 +2359,24 @@
         setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
       }
 
+      function openCreateModalWithDefaults(kind, defaults){
+        if(!app.board){
+          toast('bad', '数据未加载');
+          return;
+        }
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog' };
+        app.pendingCreateKind = kind;
+        app.pendingCreateDefaults = defaults && typeof defaults === 'object' ? defaults : null;
+        $('createModalTitle').textContent = titles[kind] || '新建';
+        $('createModalBody').innerHTML = buildCreateFormHTML(kind, app.pendingCreateDefaults);
+        $('createModal').classList.add('open');
+        $('createModal').setAttribute('aria-hidden', 'false');
+        setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
+      }
+
       function closeCreateModal(){
         app.pendingCreateKind = null;
+        app.pendingCreateDefaults = null;
         $('createModal').classList.remove('open');
         $('createModal').setAttribute('aria-hidden', 'true');
         $('createModalBody').innerHTML = '';
@@ -2380,6 +2433,7 @@
             return;
           }
           if(kind === 'bug'){
+            const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
               name,
               status: $('c_status').value,
@@ -2388,8 +2442,12 @@
               due_date: ($('c_due') && $('c_due').value.trim()) || '',
               module: ($('c_module') && $('c_module').value.trim()) || 'Bug',
               note: ($('c_note') && $('c_note').value) || '',
-              platforms: [],
+              platforms: tv.platforms,
               source: 'user',
+              version_id: tv.version_id,
+              version_ios_id: tv.version_ios_id,
+              version_android_id: tv.version_android_id,
+              version_web_id: tv.version_web_id,
             };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.bugs = app.board.bugs || [];
@@ -2414,6 +2472,7 @@
             return;
           }
           if(kind === 'ops'){
+            const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
               name,
               status: $('c_status').value,
@@ -2424,6 +2483,10 @@
               note: ($('c_note') && $('c_note').value) || '',
               is_archived: false,
               is_focus: $('c_is_focus').value === 'true',
+              version_id: tv.version_id,
+              version_ios_id: tv.version_ios_id,
+              version_android_id: tv.version_android_id,
+              version_web_id: tv.version_web_id,
             };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.ops = app.board.ops || [];
@@ -2705,6 +2768,8 @@
         const wEnd = endOfWeekSunday(now);
 
         const classify = (v)=>{
+          // 已提审/已发布：默认视为历史（用户语义：提审通过 = 上周历史）
+          if(v?.status === 'submitted' || v?.status === 'released') return 'past';
           const d = parseYmdLocal(v?.target_date);
           if(d){
             if(isInSameWeekMondayToSunday(d, now)) return 'thisweek';
@@ -2721,6 +2786,33 @@
           past: versAll.filter(v=> classify(v)==='past'),
           other: versAll.filter(v=> classify(v)==='other'),
         };
+
+        // 若本周没有可解析日期的版本：每个平台兜底取最近一个“未提审/未发布”的版本放到本周区
+        const pickFallbackThisWeek = ()=>{
+          const picked = [];
+          const plats = ['ios','android','web'];
+          for(const p of plats){
+            const existing = groups.thisweek.find(v=>v && v.platform===p);
+            if(existing) continue;
+            const cand = versAll
+              .filter(v=>v && v.platform===p && v.status !== 'submitted' && v.status !== 'released')
+              .slice()
+              .sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0))
+              .pop(); // 取最新一个
+            if(cand) picked.push(cand);
+          }
+          // 避免重复
+          const ids = new Set(groups.thisweek.map(v=>v.id));
+          for(const v of picked){
+            if(!ids.has(v.id)){
+              groups.thisweek.push(v);
+              // 从其它组移除
+              groups.future = groups.future.filter(x=>x.id!==v.id);
+              groups.other = groups.other.filter(x=>x.id!==v.id);
+            }
+          }
+        };
+        pickFallbackThisWeek();
 
         app.overviewVersionExpanded = app.overviewVersionExpanded || {};
         app.overviewGroupOpen = app.overviewGroupOpen || { future:false, past:false, other:false };
@@ -2783,6 +2875,11 @@
           const expanded = !!app.overviewVersionExpanded[v.id];
           const { t, b, o } = listByVersion(v.id);
           const cnt = `${t.length} 功能 · ${b.length} Bug · ${o.length} 运营`;
+          const addDefaults = v.platform==='ios'
+            ? { version_ios_id: v.id, this_week: false, module:'功能开发' }
+            : v.platform==='android'
+              ? { version_android_id: v.id, this_week: false, module:'功能开发' }
+              : { version_web_id: v.id, this_week: false, module:'功能开发' };
           return `
             <div class="ver-mini" data-vertoggle="${esc(v.id)}">
               <div class="ver-top" style="align-items:flex-start;">
@@ -2794,6 +2891,7 @@
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
                   <span class="badge ${vb.cls}" data-toggle="version:${esc(v.id)}">${esc(vb.label)}</span>
                   <button class="btn ghost" type="button" data-vertoggle="${esc(v.id)}" style="padding:6px 10px;">${expanded?'收起':'展开'}</button>
+                  <button class="btn" type="button" data-addtask="${esc(v.id)}" style="padding:6px 10px;">+ 新增功能</button>
                 </div>
               </div>
               ${relBlock('功能', t, 'task', expanded)}
@@ -2803,7 +2901,7 @@
           `;
         }
 
-        const weekRangeStr = `${todayStr()}（本周 ${wStart.getMonth()+1}/${wStart.getDate()} - ${wEnd.getMonth()+1}/${wEnd.getDate()}）`;
+        const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
 
         el.innerHTML = `
           <div class="overview-wrap">
@@ -2840,8 +2938,8 @@
             <div class="ver-stack">
               <div class="ver-group">
                 <div class="ver-group-head" data-vgroup="thisweek">
-                  <div class="ver-group-title">本周要发布（周一~周日）</div>
-                  <div class="ver-group-meta">${esc(weekRangeStr)}</div>
+                  <div class="ver-group-title">${esc(weekRangeStr)}</div>
+                  <div class="ver-group-meta">点击版本展开关联内容</div>
                 </div>
                 ${(groups.thisweek||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">本周暂无可解析目标日期的版本</div>`}
               </div>
@@ -2895,6 +2993,20 @@
             render();
           });
         });
+        el.querySelectorAll('[data-addtask]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const vid = Number(x.getAttribute('data-addtask'));
+            const v = (app.board?.versions || []).find(z=>z && Number(z.id) === Number(vid));
+            if(!v){ toast('bad','未找到版本'); return; }
+            const defaults = v.platform==='ios'
+              ? { version_ios_id: v.id, this_week: false, module:'功能开发' }
+              : v.platform==='android'
+                ? { version_android_id: v.id, this_week: false, module:'功能开发' }
+                : { version_web_id: v.id, this_week: false, module:'功能开发' };
+            openCreateModalWithDefaults('task', defaults);
+          });
+        });
         el.querySelectorAll('[data-vgroup]').forEach(x=>{
           x.addEventListener('click', ()=>{
             const gid = x.getAttribute('data-vgroup');
@@ -2939,6 +3051,7 @@
                     <span class="badge ${b.cls}" data-toggle="version:${esc(v.id)}">${esc(b.label)}</span>
                     <span class="chip">${esc(platLabel(v.platform))}</span>
                     <span style="margin-left:auto;color:var(--text-secondary);font-size:12px;">${esc(v.target_date || '')}</span>
+                    <button class="btn" type="button" data-addtaskfor="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;">+ 新增功能</button>
                   </div>
                   <div class="version-tasks">
                     ${vTasks.map(t=>{
@@ -2979,6 +3092,20 @@
             e.stopPropagation();
             const [kind, id] = x.getAttribute('data-toggle').split(':');
             await toggleStatus(kind, id);
+          });
+        });
+        el.querySelectorAll('[data-addtaskfor]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const vid = Number(x.getAttribute('data-addtaskfor'));
+            const v = (app.board?.versions || []).find(z=>z && Number(z.id)===Number(vid));
+            if(!v){ toast('bad','未找到版本'); return; }
+            const defaults = v.platform==='ios'
+              ? { version_ios_id: v.id, this_week: false, module:'功能开发' }
+              : v.platform==='android'
+                ? { version_android_id: v.id, this_week: false, module:'功能开发' }
+                : { version_web_id: v.id, this_week: false, module:'功能开发' };
+            openCreateModalWithDefaults('task', defaults);
           });
         });
       }
