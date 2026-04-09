@@ -3682,6 +3682,26 @@
         const versions = (app.board.versions || []).filter(v=>v && v.platform===app.versionsPlatform);
         const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
         const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived);
+        const now = new Date();
+
+        const weekRangeForVersion = (v)=>{
+          const d = parseYmdLocal(v?.week_start) || parseYmdLocal(v?.target_date);
+          if(!d) return '';
+          return formatMdRange(startOfWeekMonday(d));
+        };
+        const isThisWeekVersion = (v)=>{
+          const d = parseYmdLocal(v?.week_start) || parseYmdLocal(v?.target_date);
+          if(!d) return false;
+          return isInSameWeekMondayToSunday(d, now);
+        };
+
+        app.versionsExpanded = app.versionsExpanded || {};
+        // 默认仅展开当周版本
+        for(const v of versions){
+          if(typeof app.versionsExpanded[v.id] === 'undefined'){
+            app.versionsExpanded[v.id] = isThisWeekVersion(v);
+          }
+        }
 
         el.innerHTML = `
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;">
@@ -3693,6 +3713,8 @@
           <div>
             ${versions.map(v=>{
               const b = versionBadge(v.status);
+              const expanded = !!app.versionsExpanded[v.id];
+              const weekRange = weekRangeForVersion(v);
               const vTasks = tasks.filter(t=>{
                 const id = v.id;
                 return Number(t.version_id) === Number(id)
@@ -3705,14 +3727,15 @@
               const vBugs = bugs.filter(bg=> linkedByVersion(bg, v.id));
               return `
                 <div class="version-card">
-                  <div class="version-head" data-open="version:${esc(v.id)}">
-                    <div class="version-num">${esc(v.version_num || '')}</div>
+                  <div class="version-head">
+                    <div class="version-num" data-open="version:${esc(v.id)}" style="cursor:pointer;">${esc(v.version_num || '')}</div>
                     ${statusSelectHTML('version', v)}
                     <span class="chip">${esc(platLabel(v.platform))}</span>
-                    <span style="margin-left:auto;color:var(--text-secondary);font-size:12px;">${esc(v.week_start || '')}</span>
+                    <span style="margin-left:auto;color:var(--text-secondary);font-size:12px;">${esc(weekRange || '')}</span>
                     <button class="btn" type="button" data-addtaskfor="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;">+ 新增功能</button>
+                    <button class="btn ghost" type="button" data-vcollapse="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;" title="${expanded?'收起':'展开'}">${expanded?'▾':'▸'}</button>
                   </div>
-                  <div class="version-tasks">
+                  <div class="version-tasks" style="display:${expanded?'block':'none'};">
                     <div style="display:flex;align-items:center;justify-content:space-between;color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:0.04em;padding:4px 6px;">
                       <span>新功能（${vNew.length}）</span>
                       <span>Bug 修复（${vFix.length + vBugs.length}）</span>
@@ -3754,9 +3777,6 @@
                       </div>
                     </div>
                   </div>
-                  <div style="margin-top:10px;color:var(--text-secondary);font-size:12px;">
-                    ${esc(v.week_start ? ('周：' + String(v.week_start).slice(5).replace('-','/')) : '')}
-                  </div>
                 </div>
               `;
             }).join('') || `<div class="section">暂无 ${platLabel(app.versionsPlatform)} 版本</div>`}
@@ -3796,6 +3816,15 @@
                 ? { version_android_id: v.id, this_week: false, module:'功能开发' }
                 : { version_web_id: v.id, this_week: false, module:'功能开发' };
             openCreateModalWithDefaults('task', defaults);
+          });
+        });
+        el.querySelectorAll('[data-vcollapse]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const id = Number(x.getAttribute('data-vcollapse'));
+            if(!Number.isFinite(id)) return;
+            app.versionsExpanded[id] = !app.versionsExpanded[id];
+            render();
           });
         });
         if($('addVersionBtn')){
