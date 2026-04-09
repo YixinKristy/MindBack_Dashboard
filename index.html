@@ -519,7 +519,7 @@
         grid-template-columns: 1fr 1fr;
         grid-template-areas:
           "kpi kpi"
-          "versions milestones";
+          "milestones versions";
         gap: 12px;
       }
       .kpi-stack{ grid-area: kpi; }
@@ -557,6 +557,12 @@
       .kpi-card.strip-secondary::before{ background:#45dfa4; }
 
       .kpi-h{ font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color:#c3c6d7; font-weight: 900; }
+      .kpi-title{
+        font-size: 14px;
+        font-weight: 950;
+        letter-spacing: 0.02em;
+        color:#ff6b6b;
+      }
       .kpi-body-md{ font-size: 14px; font-weight: 600; letter-spacing: 0.03em; color:#e2e4f0; }
       .kpi-headline{ font-family: var(--font-display); font-size: 24px; font-weight: 800; letter-spacing: 0.02em; }
       .kpi-primary{ color:#b4c5ff; }
@@ -565,6 +571,7 @@
       .kpi-error{ color:#ff6b6b; }
       .kpi-muted{ color:#c3c6d7; opacity: .7; }
       .kpi-gap12{ height:12px; }
+      .kpi-gap16{ height:16px; }
       .kpi-row16{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
       .kpi-col{ display:flex; flex-direction:column; gap:6px; margin-top: 12px; }
       .kpi-line{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
@@ -3873,6 +3880,7 @@
         const phaseTitle = phase ? `${phase.name || ''}·${phase.theme || ''}`.replace(/\s*·\s*$/,'') : '第一阶段·稳功能基础';
         const phaseRange = phase?.month_range || '';
         const phaseDesc = phase?.description || '';
+        const monthGoalText = ((app.board?.overview?.month_goal || '').trim() || phaseDesc || '').trim();
 
         const daysUntil = (ymdStr)=>{
           const d = parseYmdLocal(ymdStr);
@@ -4135,6 +4143,8 @@
         }
 
         const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
+        const weekRangeZh = `${formatYmdZh(ymd(wStart))}—${formatYmdZh(ymd(wEnd))}`;
+        const monthTitle = `${now.getMonth()+1}月目标`;
 
         // 总览固定展示近三周：上周 / 本周 / 下周（每周展示该周内所有端版本）
         const pickTop3 = ()=>{
@@ -4181,39 +4191,37 @@
             <div class="kpi-stack">
               <div class="kpi-row">
                 <div class="kpi-card strip-primary" data-ovcard="ms">
-                  <div class="kpi-h">当前阶段</div>
-                  <div class="kpi-body-md" style="margin-top:8px;">${esc(phaseTitle)}</div>
-                  <div class="kpi-gap12"></div>
-                  <div class="kpi-h">里程碑</div>
-                  <div class="kpi-headline kpi-primary" style="margin-top:6px;font-size:12px;">${esc(keyMsTitle)}</div>
-                  ${keyMsCountdown ? `<div class="kpi-body-md kpi-tertiary" style="margin-top:6px;">${esc(keyMsCountdown)}</div>` : ``}
+                  <div class="kpi-title">${esc(monthTitle)}</div>
+                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(monthGoalText || '（点击编辑）')}</div>
+                  <div class="kpi-gap16"></div>
+                  <div class="kpi-title">${esc(weekRangeZh)}阶段目标</div>
+                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc((phase?.theme || '').trim() || '（可在阶段里维护目标要点）')}</div>
                 </div>
 
                 <div class="kpi-card strip-secondary" data-ovcard="release">
-                  <div class="kpi-h">本周预计发布版本</div>
+                  <div class="kpi-title">本周各端发布版本</div>
                   <div class="kpi-col">
                     ${['ios','android','web'].map(p=>{
                       const v = thisWeekByPlat[p];
-                      const pLab = p==='ios'?'IOS' : p==='android'?'ANDROID' : 'WEB';
-                      const num = v ? (v.version_num || '') : '本周无发布';
-                      const st = v ? (v.status || 'dev') : 'none';
-                      const badgeCls = st==='released'?'released' : st==='submitted'?'submitted' : st==='dev'?'dev' : st==='testing'?'dev' : 'none';
-                      const stLab = st==='released'?'已发布' : st==='submitted'?'提审中' : st==='dev'?'开发中' : st==='testing'?'开发中' : '本周无发布';
+                      if(!v) return '';
+                      const pLab = p==='ios'?'iOS' : p==='android'?'Android' : 'Web';
+                      const num = (v.version_num || '').trim();
+                      if(!num) return '';
+                      const st = (v.status || 'dev');
+                      const badgeCls = st==='released'?'released' : st==='submitted'?'submitted' : st==='dev'?'dev' : st==='testing'?'dev' : st==='not_started'?'none' : 'none';
+                      const stLab = st==='released'?'已发布' : st==='submitted'?'提审中' : st==='dev'?'开发中' : st==='testing'?'测试中' : st==='not_started'?'未开始' : '—';
                       return `
                         <div class="kpi-line" data-ovver="${v ? esc(v.id) : ''}" data-ovplat="${p}">
-                          <div style="min-width:0;">
-                            <div class="kpi-h">${pLab}</div>
-                            <div class="kpi-body-md" style="margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(num)}</div>
-                          </div>
-                          <span class="kpi-badge ${badgeCls} ${st==='none'?'none':''}">${esc(stLab)}</span>
+                          <div class="kpi-body-md" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(pLab)} ${esc(num)}</div>
+                          <span class="kpi-badge ${badgeCls}">${esc(stLab)}</span>
                         </div>
                       `;
-                    }).join('')}
+                    }).filter(Boolean).join('') || `<div class="kpi-body-md kpi-muted" style="margin-top:8px;">本周无发布</div>`}
                   </div>
                 </div>
 
                 <div class="kpi-card ${riskStrip} ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk">
-                  <div class="kpi-h">当前风险预警</div>
+                  <div class="kpi-title">本周预警</div>
                   ${riskCount===0 ? `
                     <div class="kpi-body-md kpi-secondary" style="margin-top:14px;">暂无风险</div>
                   ` : `
