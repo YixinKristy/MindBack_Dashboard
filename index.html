@@ -2816,6 +2816,7 @@
 
         app.overviewVersionExpanded = app.overviewVersionExpanded || {};
         app.overviewGroupOpen = app.overviewGroupOpen || { future:false, past:false, other:false };
+        app.overviewSort = app.overviewSort || {}; // key: `${vid}:${kind}` -> sortKey
 
         // 默认展开当周版本
         for(const v of groups.thisweek){
@@ -2843,14 +2844,51 @@
           const label = s==='done'?'已完成' : s==='prog'?'进行中' : s==='pause'?'暂停' : '计划中';
           return { cls, label };
         }
+        function sortList(kind, list, sortKey){
+          if(!Array.isArray(list)) return [];
+          if(!sortKey || sortKey === 'default') return list; // 保持当前默认顺序
+          const arr = list.slice();
+          if(sortKey === 'status'){
+            const rank = (s)=>{
+              if(kind === 'ops') return s==='prog'?0 : s==='plan'?1 : s==='pause'?2 : s==='done'?3 : 9;
+              return s==='block'?0 : s==='prog'?1 : s==='ns'?2 : s==='done'?3 : 9;
+            };
+            arr.sort((a,b)=> rank(a?.status) - rank(b?.status));
+            return arr;
+          }
+          if(sortKey === 'due'){
+            const get = (r)=>{
+              const raw = kind==='ops' ? (r?.target_date || '') : (r?.due_date || '');
+              const d = parseYmdLocal(raw);
+              return d ? d.getTime() : Number.POSITIVE_INFINITY;
+            };
+            arr.sort((a,b)=> get(a) - get(b));
+            return arr;
+          }
+          if(sortKey === 'pri' && kind === 'task'){
+            arr.sort((a,b)=> priRank(a?.priority) - priRank(b?.priority));
+            return arr;
+          }
+          return list;
+        }
         function relBlock(label, list, kind, expanded){
           if(!expanded) return '';
-          const rows = list.slice(0, 12);
-          const more = list.length > rows.length ? `<div style="color:var(--text-secondary);font-size:12px;">还有 ${list.length-rows.length} 条…</div>` : '';
+          const vid = String(app._overviewActiveVid || '');
+          const key = `${vid}:${kind}`;
+          const sortKey = app.overviewSort[key] || 'default';
+          const sorted = sortList(kind, list, sortKey);
+          const rows = sorted.slice(0, 12);
+          const more = sorted.length > rows.length ? `<div style="color:var(--text-secondary);font-size:12px;">还有 ${sorted.length-rows.length} 条…</div>` : '';
           return `
             <div class="ver-related">
               <div class="ver-rel-head">
                 <div class="ver-rel-title">${esc(label)}（${list.length}）</div>
+                <select class="select" data-sort="${esc(key)}" style="width:auto;min-width:140px;padding:6px 10px;font-size:12px;">
+                  <option value="default" ${sortKey==='default'?'selected':''}>默认顺序</option>
+                  ${kind==='task' ? `<option value="pri" ${sortKey==='pri'?'selected':''}>按优先级</option>` : ``}
+                  <option value="status" ${sortKey==='status'?'selected':''}>按状态</option>
+                  <option value="due" ${sortKey==='due'?'selected':''}>按截止/目标日期</option>
+                </select>
               </div>
               <div class="ver-rel-list">
                 ${rows.map(r=>{
@@ -2894,6 +2932,7 @@
                   <button class="btn" type="button" data-addtask="${esc(v.id)}" style="padding:6px 10px;">+ 新增功能</button>
                 </div>
               </div>
+              ${(() => { app._overviewActiveVid = v.id; return ''; })()}
               ${relBlock('功能', t, 'task', expanded)}
               ${relBlock('Bug', b, 'bug', expanded)}
               ${relBlock('运营', o, 'ops', expanded)}
@@ -3014,6 +3053,16 @@
             app.overviewGroupOpen[gid] = !app.overviewGroupOpen[gid];
             render();
           });
+        });
+        el.querySelectorAll('[data-sort]').forEach(x=>{
+          x.addEventListener('change', (e)=>{
+            e.stopPropagation();
+            const k = x.getAttribute('data-sort');
+            if(!k) return;
+            app.overviewSort[k] = x.value;
+            render();
+          });
+          x.addEventListener('click', (e)=> e.stopPropagation());
         });
         el.querySelectorAll('[data-toggle]').forEach(x=>{
           x.addEventListener('click', async (e)=>{
