@@ -751,6 +751,8 @@
         padding: 12px;
       }
       .ver-group + .ver-group{ margin-top: 10px; }
+      .ver-group > .ver-mini{ margin-top: 10px; }
+      .ver-group > .ver-mini:first-of-type{ margin-top: 0; }
       .ver-group-head{
         display:flex;
         align-items:center;
@@ -3982,13 +3984,18 @@
           }
         };
         pickFallbackThisWeek();
+        // 严格本周：防止非本周版本混入本周列表
+        const thisWeekStrict = (groups.thisweek || []).filter(v=>{
+          const d = weekDateOfVersion(v);
+          return d && isInSameWeekMondayToSunday(d, now);
+        });
 
         app.overviewVersionExpanded = app.overviewVersionExpanded || {};
         app.overviewGroupOpen = app.overviewGroupOpen || { future:false, past:false, other:false };
         app.overviewSort = app.overviewSort || {}; // key: `${vid}:${kind}` -> sortKey
 
         // 默认展开当周版本
-        for(const v of groups.thisweek){
+        for(const v of thisWeekStrict){
           if(typeof app.overviewVersionExpanded[v.id] === 'undefined') app.overviewVersionExpanded[v.id] = true;
         }
 
@@ -4178,10 +4185,10 @@
           // 关键：本周需要展示“所有平台版本”，不能被 pickOne 挤掉
           const set = new Set([
             ...chosen.map(v=>v.id),
-            ...(groups.thisweek || []).map(v=>v.id),
+            ...thisWeekStrict.map(v=>v.id),
           ]);
           const past = (groups.past||[]).filter(v=>set.has(v.id));
-          const thisweek = (groups.thisweek||[]).filter(v=>set.has(v.id));
+          const thisweek = (thisWeekStrict||[]).filter(v=>set.has(v.id));
           const future = (groups.future||[]).filter(v=>set.has(v.id));
           const other = (groups.other||[]).filter(v=>set.has(v.id));
           return { past, thisweek, future, other };
