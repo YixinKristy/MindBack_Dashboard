@@ -57,6 +57,14 @@
         flex-direction:column;
         padding: 18px 14px;
         gap: 16px;
+        transition: width .18s ease, padding .18s ease, opacity .18s ease;
+        overflow:hidden;
+      }
+      .sidebar.collapsed{
+        width: 0;
+        padding: 18px 0;
+        opacity: 0.0;
+        pointer-events:none;
       }
       .brand{
         display:flex;
@@ -457,12 +465,16 @@
       /* ── Overview ── */
       .overview-wrap{
         display:grid;
-        grid-template-columns: 30% 45% 25%;
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+          "kpi kpi"
+          "versions milestones";
         gap: 12px;
       }
-      .kpi-stack{
-        display:flex;
-        flex-direction:column;
+      .kpi-stack{ grid-area: kpi; }
+      .kpi-row{
+        display:grid;
+        grid-template-columns: repeat(4, 1fr);
         gap: 12px;
       }
       .kpi-card{
@@ -497,9 +509,25 @@
       }
 
       .phase-card{
+        grid-area: milestones;
         background: var(--surface);
         border-radius: var(--radius-lg);
         padding: 24px;
+      }
+      .phase-head{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap: 12px;
+      }
+      .phase-range{
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 850;
+        letter-spacing: 0.04em;
+        flex-shrink:0;
+        text-align:right;
+        margin-top: 2px;
       }
       .phase-title{
         font-family: var(--font-display);
@@ -570,6 +598,7 @@
       }
 
       .ver-stack{
+        grid-area: versions;
         display:flex;
         flex-direction:column;
         gap: 12px;
@@ -578,8 +607,8 @@
         background: var(--surface-raised);
         border-radius: var(--radius-md);
         padding: 14px 14px;
-        cursor:pointer;
         transition: background .15s ease;
+        overflow:hidden;
       }
       .ver-mini:hover{ background: rgba(46,47,58,0.95); }
       .ver-top{
@@ -1085,6 +1114,7 @@
           <div class="header-title" id="headerTitle">本周</div>
           <div class="header-right">
             <span id="todayStr">—</span>
+            <button class="btn ghost" id="sidebarToggle" type="button">目录</button>
             <button class="btn ghost" id="refreshBtn" type="button">刷新</button>
             <button class="btn ghost" id="syncBtn" type="button">同步</button>
             <button class="btn ghost" id="legacyBtn" type="button">回到旧版</button>
@@ -1160,6 +1190,8 @@
         localOnly: false, // 写回后端（失败则进入待同步队列，前端仍保持变更）
         syncQueue: [],    // { op:'patch'|'insert'|'delete', table, idField, idValue, patch|row, tempId? }
         pendingCreateKind: null,
+        pendingCreateDefaults: null,
+        sidebarCollapsed: false,
       };
 
       const TABS = [
@@ -1541,6 +1573,13 @@
         });
       }
 
+      function applySidebarCollapsed(){
+        const sb = document.querySelector('.sidebar');
+        if(!sb) return;
+        if(app.sidebarCollapsed) sb.classList.add('collapsed');
+        else sb.classList.remove('collapsed');
+      }
+
       function renderHeader(){
         const tab = TABS.find(t=>t.id===app.activeTab);
         $('headerTitle').textContent = tab ? tab.label : '看板';
@@ -1558,6 +1597,12 @@
           const n = (app.syncQueue || []).length;
           syncBtn.textContent = n > 0 ? `同步(${n})` : '同步';
           syncBtn.title = n > 0 ? '将待同步变更写回后端' : '当前没有待同步变更';
+        }
+
+        const sidebarToggle = $('sidebarToggle');
+        if(sidebarToggle){
+          sidebarToggle.textContent = app.sidebarCollapsed ? '展开目录' : '收起目录';
+          sidebarToggle.title = '折叠/展开左侧目录';
         }
       }
 
@@ -2901,11 +2946,11 @@
               <div class="ver-rel-list">
                 ${rows.map(r=>{
                   const badge = (kind==='ops') ? opsStatusBadge(r.status) : taskStatusBadge(r.status);
-                  const sub = (kind==='ops') ? (r.target_date || '—') : (r.due_date || '—');
+                  const sub = (kind==='ops') ? (r.target_date || '') : (r.due_date || '');
                   return `
                     <div class="ver-rel-item" data-open="${kind}:${esc(r.id)}">
                       <div class="ver-rel-name">${esc(r.name || '未命名')}</div>
-                      <div class="ver-rel-sub">${esc(sub)}</div>
+                      ${sub ? `<div class="ver-rel-sub">${esc(sub)}</div>` : ``}
                       <span class="badge ${esc(badge.cls)}">${esc(badge.label)}</span>
                     </div>
                   `;
@@ -2936,8 +2981,7 @@
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
                   <span class="badge ${vb.cls}" data-toggle="version:${esc(v.id)}">${esc(vb.label)}</span>
-                  <button class="btn ghost" type="button" data-vertogglebtn="${esc(v.id)}" style="padding:6px 10px;">${expanded?'收起':'展开'}</button>
-                  <button class="btn" type="button" data-addtask="${esc(v.id)}" style="padding:6px 10px;">+ 新增功能</button>
+                  <button class="btn ghost" type="button" data-vertogglebtn="${esc(v.id)}" style="padding:6px 10px;" title="${expanded?'收起':'展开'}">${expanded?'▾':'▸'}</button>
                 </div>
               </div>
               ${(() => { app._overviewActiveVid = v.id; return ''; })()}
@@ -2953,36 +2997,25 @@
         el.innerHTML = `
           <div class="overview-wrap">
             <div class="kpi-stack">
-              ${kpiCard('本周完成任务数', String(doneThisWeek), 'good', '可点击筛选（待补）')}
-              ${kpiCard('进行中里程碑', String(currentMs), 'primary', '可点击筛选（待补）')}
-              ${kpiCard('未解决 Bug 数', String(openBugs), openBugs>0?'bad':'good', '可点击筛选（待补）')}
-              ${kpiCard('本月 Backlog 处理率', backlogRate + '%', 'warn', '按 moved_from_backlog_id 粗略计算')}
-            </div>
-
-            <div class="phase-card">
-              <div class="phase-title">${esc(phaseTitle)}</div>
-              <div class="phase-sub">${esc(phaseRange)}</div>
-              <div class="phase-sub" style="margin-top:10px;">${esc(phaseDesc)}</div>
-              <div class="bar"><i style="width:${pct}%"></i></div>
-              <div class="milestone-list">
-                ${(milestones || []).slice(0,4).map(m=>{
-                  const b = taskStatusBadge(msStatusToTaskStatus(m.status));
-                  const d = m.date_short || m.date_full || '';
-                  const doneCls = m.status==='done' ? 'done' : '';
-                  return `
-                    <div class="ms-row" data-open="milestone:${esc(m.id)}">
-                      <div class="ms-left">
-                        <span class="ms-date">${esc(d || '—')}</span>
-                        <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
-                      </div>
-                      <span class="badge ${b.cls}" data-toggle="milestone:${esc(m.id)}">${esc(b.label)}</span>
-                    </div>
-                  `;
-                }).join('')}
+              <div class="kpi-row">
+                ${kpiCard('本周完成任务数', String(doneThisWeek), 'good', '')}
+                ${kpiCard('进行中里程碑', String(currentMs), 'primary', '')}
+                ${kpiCard('未解决 Bug 数', String(openBugs), openBugs>0?'bad':'good', '')}
+                ${kpiCard('本月 Backlog 处理率', backlogRate + '%', 'warn', '')}
               </div>
             </div>
 
             <div class="ver-stack">
+              <div class="ver-group">
+                <div class="ver-group-head" data-vgroup="past">
+                  <div class="ver-group-title">历史版本</div>
+                  <div class="ver-group-meta">${(groups.past||[]).length} 个 · 点击展开</div>
+                </div>
+                <div style="display:${app.overviewGroupOpen.past?'block':'none'};" data-vgroup-body="past">
+                  ${(groups.past||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
+                </div>
+              </div>
+
               <div class="ver-group">
                 <div class="ver-group-head" data-vgroup="thisweek">
                   <div class="ver-group-title">${esc(weekRangeStr)}</div>
@@ -3002,16 +3035,6 @@
               </div>
 
               <div class="ver-group">
-                <div class="ver-group-head" data-vgroup="past">
-                  <div class="ver-group-title">历史版本</div>
-                  <div class="ver-group-meta">${(groups.past||[]).length} 个 · 点击展开</div>
-                </div>
-                <div style="display:${app.overviewGroupOpen.past?'block':'none'};" data-vgroup-body="past">
-                  ${(groups.past||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
-                </div>
-              </div>
-
-              <div class="ver-group">
                 <div class="ver-group-head" data-vgroup="other">
                   <div class="ver-group-title">未识别日期（手工维护）</div>
                   <div class="ver-group-meta">${(groups.other||[]).length} 个 · 点击展开</div>
@@ -3019,6 +3042,33 @@
                 <div style="display:${app.overviewGroupOpen.other?'block':'none'};" data-vgroup-body="other">
                   ${(groups.other||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
                 </div>
+              </div>
+            </div>
+
+            <div class="phase-card">
+              <div class="phase-head">
+                <div>
+                  <div class="phase-title">${esc(phaseTitle)}</div>
+                  <div class="phase-sub" style="margin-top:10px;">${esc(phaseDesc)}</div>
+                </div>
+                <div class="phase-range">${esc(phaseRange)}</div>
+              </div>
+              <div class="bar"><i style="width:${pct}%"></i></div>
+              <div class="milestone-list">
+                ${(milestones || []).slice(0,6).map(m=>{
+                  const b = taskStatusBadge(msStatusToTaskStatus(m.status));
+                  const d = m.date_short || m.date_full || '';
+                  const doneCls = m.status==='done' ? 'done' : '';
+                  return `
+                    <div class="ms-row" data-open="milestone:${esc(m.id)}">
+                      <div class="ms-left">
+                        <span class="ms-date">${esc(d || '—')}</span>
+                        <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
+                      </div>
+                      <span class="badge ${b.cls}" data-toggle="milestone:${esc(m.id)}">${esc(b.label)}</span>
+                    </div>
+                  `;
+                }).join('')}
               </div>
             </div>
           </div>
@@ -3040,20 +3090,7 @@
             render();
           });
         });
-        el.querySelectorAll('[data-addtask]').forEach(x=>{
-          x.addEventListener('click', (e)=>{
-            e.stopPropagation();
-            const vid = Number(x.getAttribute('data-addtask'));
-            const v = (app.board?.versions || []).find(z=>z && Number(z.id) === Number(vid));
-            if(!v){ toast('bad','未找到版本'); return; }
-            const defaults = v.platform==='ios'
-              ? { version_ios_id: v.id, this_week: false, module:'功能开发' }
-              : v.platform==='android'
-                ? { version_android_id: v.id, this_week: false, module:'功能开发' }
-                : { version_web_id: v.id, this_week: false, module:'功能开发' };
-            openCreateModalWithDefaults('task', defaults);
-          });
-        });
+        // 总览版本区不提供“新增功能”入口：保持总览为汇总视图
         el.querySelectorAll('[data-vgroup]').forEach(x=>{
           x.addEventListener('click', ()=>{
             const gid = x.getAttribute('data-vgroup');
@@ -3338,6 +3375,12 @@
       $('syncBtn').addEventListener('click', ()=> syncNow().catch(e=>{ console.warn(e); toast('bad','同步失败'); }));
       $('legacyBtn').addEventListener('click', ()=> window.open(LEGACY_FILE, '_blank'));
       $('adminBtn').addEventListener('click', openLogin);
+      $('sidebarToggle').addEventListener('click', ()=>{
+        app.sidebarCollapsed = !app.sidebarCollapsed;
+        try{ localStorage.setItem('mindback_sidebar_collapsed_v1', app.sidebarCollapsed ? '1' : '0'); }catch(_e){}
+        applySidebarCollapsed();
+        renderHeader();
+      });
       $('loginCancel').addEventListener('click', closeLogin);
       $('loginSubmit').addEventListener('click', doLogin);
 
@@ -3352,6 +3395,10 @@
       (async function init(){
         $('todayStr').textContent = todayStr();
         try{
+          try{
+            const raw = localStorage.getItem('mindback_sidebar_collapsed_v1');
+            app.sidebarCollapsed = raw === '1';
+          }catch(_e){}
           app.syncQueue = loadQueue();
           const draft = loadLocalDraft();
           if(draft?.board){
@@ -3361,6 +3408,7 @@
           }else{
             app.board = await loadBoard();
           }
+          applySidebarCollapsed();
           render();
         }catch(e){
           console.warn(e);
