@@ -3557,10 +3557,18 @@
       }
 
       function renderThisWeek(el){
-        const tasks = (app.board.tasks || []).filter(t=>t && t.this_week && !t.is_archived);
+        const now = new Date();
+        const wStart = startOfWeekMonday(now);
+        const wEnd = endOfWeekSunday(now);
+        const inThisWeekByRange = (raw)=>{
+          const { start, end } = parseRangeYmd(raw || '');
+          if(!start || !end) return false;
+          return rangesOverlap(start, end, wStart, wEnd);
+        };
+        const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived && inThisWeekByRange(t.due_date || ''));
         // 本周不展示“上周已随发版结项”的 Bug（done 且关联 released 版本）
-        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived && !(b.status==='done' && rowHasReleasedVersion(b)));
-        const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
+        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived && inThisWeekByRange(b.due_date || '') && !(b.status==='done' && rowHasReleasedVersion(b)));
+        const ops = (app.board.ops || []).filter(o=>o && !o.is_archived && inThisWeekByRange(o.target_date || ''));
 
         const focusItems = [];
         tasks.filter(t=>t.is_focus).forEach(t=> focusItems.push({ kind:'task', row:t, module: t.module || '功能开发' }));
