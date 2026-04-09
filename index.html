@@ -598,6 +598,85 @@
         color: var(--text-secondary);
         font-size: 12px;
       }
+      .ver-group{
+        background: rgba(37,39,49,0.55);
+        border-radius: var(--radius-md);
+        padding: 12px;
+      }
+      .ver-group + .ver-group{ margin-top: 10px; }
+      .ver-group-head{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap: 10px;
+        cursor:pointer;
+        user-select:none;
+        padding: 2px 2px 10px 2px;
+      }
+      .ver-group-title{
+        font-family: var(--font-display);
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      .ver-group-meta{
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 750;
+      }
+      .ver-related{
+        margin-top: 10px;
+        display:grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        background: rgba(30,31,38,0.55);
+        border-radius: var(--radius-md);
+        padding: 10px;
+      }
+      .ver-rel-head{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap: 10px;
+      }
+      .ver-rel-title{
+        font-weight: 850;
+        letter-spacing: 0.03em;
+        color: var(--text-secondary);
+        font-size: 11px;
+      }
+      .ver-rel-list{
+        margin-top: 8px;
+        display:flex;
+        flex-direction:column;
+        gap: 8px;
+      }
+      .ver-rel-item{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap: 10px;
+        padding: 8px 10px;
+        border-radius: var(--radius-md);
+        background: rgba(46,47,58,0.72);
+        cursor:pointer;
+        transition: background .15s ease, transform .15s ease;
+        min-width:0;
+      }
+      .ver-rel-item:hover{ background: rgba(46,47,58,0.92); transform: translateY(-1px); }
+      .ver-rel-name{
+        overflow:hidden;
+        white-space:nowrap;
+        text-overflow:ellipsis;
+        font-weight: 700;
+        min-width:0;
+      }
+      .ver-rel-sub{
+        color: var(--text-secondary);
+        font-size: 12px;
+        flex-shrink:0;
+      }
 
       /* ── Versions tab ── */
       .pill-tabs{
@@ -1157,6 +1236,32 @@
         const pad = (n)=> String(n).padStart(2,'0');
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
       }
+      function parseYmdLocal(s){
+        const m = String(s||'').trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if(!m) return null;
+        const y = Number(m[1]), mo = Number(m[2]), da = Number(m[3]);
+        const d = new Date(y, mo-1, da);
+        if(d.getFullYear()!==y || (d.getMonth()+1)!==mo || d.getDate()!==da) return null;
+        return d;
+      }
+      function startOfWeekMonday(d){
+        const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+        const day = x.getDay(); // 0 Sun .. 6 Sat
+        const diff = (day + 6) % 7; // Mon -> 0, Sun -> 6
+        x.setDate(x.getDate() - diff);
+        x.setHours(0,0,0,0);
+        return x;
+      }
+      function endOfWeekSunday(d){
+        const s = startOfWeekMonday(d);
+        const e = new Date(s);
+        e.setDate(e.getDate() + 6);
+        e.setHours(23,59,59,999);
+        return e;
+      }
+      function isInSameWeekMondayToSunday(a, b){
+        return startOfWeekMonday(a).getTime() === startOfWeekMonday(b).getTime();
+      }
 
       async function sbFetch(path, { method='GET', headers={}, body=null } = {}){
         const h = {
@@ -1688,7 +1793,7 @@
             </div>
           ` : ''}
 
-          ${kind==='task' ? `
+          ${(kind==='task' || kind==='bug' || kind==='ops') ? `
             <div class="field">
               <div class="label">关联版本 · iOS</div>
               <select class="select" id="f_v_ios">${versionSelectOptions('ios', row.version_ios_id)}</select>
@@ -1701,6 +1806,9 @@
               <div class="label">关联版本 · Web</div>
               <select class="select" id="f_v_web">${versionSelectOptions('web', row.version_web_id)}</select>
             </div>
+          ` : ''}
+
+          ${kind==='task' ? `
             <div class="field">
               <div class="label">负责人</div>
               <input class="input" id="f_owners" value="${esc(ownersValue)}" placeholder="例如：择良, 黄镇威（逗号分隔）" />
@@ -1791,7 +1899,9 @@
             .map(s=>s.trim())
             .filter(Boolean)
           : null;
-        const taskVers = kind === 'task' ? taskVersionBundleFromSelects('f_v_ios', 'f_v_android', 'f_v_web') : null;
+        const versBundle = (kind === 'task' || kind === 'bug' || kind === 'ops')
+          ? taskVersionBundleFromSelects('f_v_ios', 'f_v_android', 'f_v_web')
+          : null;
         const thisWeekTask = kind === 'task' && $('f_this_week') ? ($('f_this_week').value === 'true') : null;
         const taskTypeVal = kind === 'task' && $('f_task_type') ? $('f_task_type').value : null;
         const sourceVal = kind === 'task' && $('f_source') ? $('f_source').value : null;
@@ -1815,17 +1925,30 @@
               platform: platformVal || row.platform,
             });
           }else if(kind==='ops'){
-            applyLocal(kind, row.id, { name, status, target_date: due, note, is_focus: focus });
+            applyLocal(kind, row.id, {
+              name, status, target_date: due, note, is_focus: focus,
+              version_ios_id: versBundle.version_ios_id,
+              version_android_id: versBundle.version_android_id,
+              version_web_id: versBundle.version_web_id,
+              version_id: versBundle.version_id,
+            });
           }else if(kind==='bug'){
-            applyLocal(kind, row.id, { name, status, due_date: due, note, module, is_focus: focus });
+            applyLocal(kind, row.id, {
+              name, status, due_date: due, note, module, is_focus: focus,
+              version_ios_id: versBundle.version_ios_id,
+              version_android_id: versBundle.version_android_id,
+              version_web_id: versBundle.version_web_id,
+              version_id: versBundle.version_id,
+              platforms: versBundle.platforms,
+            });
           }else if(kind==='task'){
             applyLocal(kind, row.id, {
               name, status, priority, due_date: due, note, module, is_focus: focus, owners: owners || [],
-              version_ios_id: taskVers.version_ios_id,
-              version_android_id: taskVers.version_android_id,
-              version_web_id: taskVers.version_web_id,
-              version_id: taskVers.version_id,
-              platforms: taskVers.platforms,
+              version_ios_id: versBundle.version_ios_id,
+              version_android_id: versBundle.version_android_id,
+              version_web_id: versBundle.version_web_id,
+              version_id: versBundle.version_id,
+              platforms: versBundle.platforms,
               this_week: thisWeekTask,
               task_type: taskTypeVal,
               source: sourceVal,
@@ -1855,6 +1978,10 @@
             patch.target_date = due;
             patch.note = note;
             patch.is_focus = focus;
+            patch.version_ios_id = versBundle.version_ios_id;
+            patch.version_android_id = versBundle.version_android_id;
+            patch.version_web_id = versBundle.version_web_id;
+            patch.version_id = versBundle.version_id;
           }else if(kind==='bug'){
             patch.name = name;
             patch.status = status;
@@ -1862,6 +1989,11 @@
             patch.note = note;
             patch.module = module;
             patch.is_focus = focus;
+            patch.version_ios_id = versBundle.version_ios_id;
+            patch.version_android_id = versBundle.version_android_id;
+            patch.version_web_id = versBundle.version_web_id;
+            patch.version_id = versBundle.version_id;
+            patch.platforms = versBundle.platforms;
           }else if(kind==='task'){
             patch.name = name;
             patch.status = status;
@@ -1871,11 +2003,11 @@
             patch.module = module;
             patch.is_focus = focus;
             patch.owners = owners || [];
-            patch.version_ios_id = taskVers.version_ios_id;
-            patch.version_android_id = taskVers.version_android_id;
-            patch.version_web_id = taskVers.version_web_id;
-            patch.version_id = taskVers.version_id;
-            patch.platforms = taskVers.platforms;
+            patch.version_ios_id = versBundle.version_ios_id;
+            patch.version_android_id = versBundle.version_android_id;
+            patch.version_web_id = versBundle.version_web_id;
+            patch.version_id = versBundle.version_id;
+            patch.platforms = versBundle.platforms;
             if(thisWeekTask !== null) patch.this_week = thisWeekTask;
             if(taskTypeVal) patch.task_type = taskTypeVal;
             if(sourceVal) patch.source = sourceVal;
@@ -2549,6 +2681,7 @@
       function renderOverview(el){
         const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
         const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived && b.status !== 'done');
+        const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
         const milestones = (app.board.milestones || []);
         const backlog = (app.board.backlog || []).filter(x=>x && !x.is_archived);
 
@@ -2566,7 +2699,111 @@
         const pNow = Math.min(pTotal, 12);
         const pct = Math.round((pNow/pTotal) * 100);
 
-        const verMini = (app.board.versions || []).slice(0,3);
+        const versAll = (app.board.versions || []).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+        const now = new Date();
+        const wStart = startOfWeekMonday(now);
+        const wEnd = endOfWeekSunday(now);
+
+        const classify = (v)=>{
+          const d = parseYmdLocal(v?.target_date);
+          if(d){
+            if(isInSameWeekMondayToSunday(d, now)) return 'thisweek';
+            if(d.getTime() < wStart.getTime()) return 'past';
+            if(d.getTime() > wEnd.getTime()) return 'future';
+          }
+          // 无法解析日期的：先归到 other（可手工维护）
+          return 'other';
+        };
+
+        const groups = {
+          thisweek: versAll.filter(v=> classify(v)==='thisweek'),
+          future: versAll.filter(v=> classify(v)==='future'),
+          past: versAll.filter(v=> classify(v)==='past'),
+          other: versAll.filter(v=> classify(v)==='other'),
+        };
+
+        app.overviewVersionExpanded = app.overviewVersionExpanded || {};
+        app.overviewGroupOpen = app.overviewGroupOpen || { future:false, past:false, other:false };
+
+        // 默认展开当周版本
+        for(const v of groups.thisweek){
+          if(typeof app.overviewVersionExpanded[v.id] === 'undefined') app.overviewVersionExpanded[v.id] = true;
+        }
+
+        function linkedByVersion(row, vid){
+          if(!row) return false;
+          const id = Number(vid);
+          if(Number(row.version_id) === id) return true;
+          if(Number(row.version_ios_id) === id) return true;
+          if(Number(row.version_android_id) === id) return true;
+          if(Number(row.version_web_id) === id) return true;
+          return false;
+        }
+        function listByVersion(vid){
+          return {
+            t: tasks.filter(x=> linkedByVersion(x, vid)),
+            b: bugs.filter(x=> linkedByVersion(x, vid)),
+            o: ops.filter(x=> linkedByVersion(x, vid)),
+          };
+        }
+        function opsStatusBadge(s){
+          const cls = s==='done'?'done' : s==='prog'?'prog' : s==='pause'?'block' : 'ns';
+          const label = s==='done'?'已完成' : s==='prog'?'进行中' : s==='pause'?'暂停' : '计划中';
+          return { cls, label };
+        }
+        function relBlock(label, list, kind, expanded){
+          if(!expanded) return '';
+          const rows = list.slice(0, 12);
+          const more = list.length > rows.length ? `<div style="color:var(--text-secondary);font-size:12px;">还有 ${list.length-rows.length} 条…</div>` : '';
+          return `
+            <div class="ver-related">
+              <div class="ver-rel-head">
+                <div class="ver-rel-title">${esc(label)}（${list.length}）</div>
+              </div>
+              <div class="ver-rel-list">
+                ${rows.map(r=>{
+                  const badge = (kind==='ops') ? opsStatusBadge(r.status) : taskStatusBadge(r.status);
+                  const sub = (kind==='ops') ? (r.target_date || '—') : (r.due_date || '—');
+                  return `
+                    <div class="ver-rel-item" data-open="${kind}:${esc(r.id)}">
+                      <div class="ver-rel-name">${esc(r.name || '未命名')}</div>
+                      <div class="ver-rel-sub">${esc(sub)}</div>
+                      <span class="badge ${esc(badge.cls)}">${esc(badge.label)}</span>
+                    </div>
+                  `;
+                }).join('') || `<div style="color:var(--text-secondary);font-size:12px;">暂无</div>`}
+                ${more}
+              </div>
+            </div>
+          `;
+        }
+        function verCard(v){
+          const vb = versionBadge(v.status);
+          const plat = v.platform==='ios'?'📱 iOS' : v.platform==='android'?'🤖 Android' : '🕸 Web';
+          const expanded = !!app.overviewVersionExpanded[v.id];
+          const { t, b, o } = listByVersion(v.id);
+          const cnt = `${t.length} 功能 · ${b.length} Bug · ${o.length} 运营`;
+          return `
+            <div class="ver-mini" data-vertoggle="${esc(v.id)}">
+              <div class="ver-top" style="align-items:flex-start;">
+                <div style="min-width:0;">
+                  <div class="ver-num" data-open="version:${esc(v.id)}">${esc(v.version_num || '')}</div>
+                  <div class="ver-plat">${esc(plat)} · ${esc(v.target_date || '')}</div>
+                  <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">${esc(cnt)}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+                  <span class="badge ${vb.cls}" data-toggle="version:${esc(v.id)}">${esc(vb.label)}</span>
+                  <button class="btn ghost" type="button" data-vertoggle="${esc(v.id)}" style="padding:6px 10px;">${expanded?'收起':'展开'}</button>
+                </div>
+              </div>
+              ${relBlock('功能', t, 'task', expanded)}
+              ${relBlock('Bug', b, 'bug', expanded)}
+              ${relBlock('运营', o, 'ops', expanded)}
+            </div>
+          `;
+        }
+
+        const weekRangeStr = `${todayStr()}（本周 ${wStart.getMonth()+1}/${wStart.getDate()} - ${wEnd.getMonth()+1}/${wEnd.getDate()}）`;
 
         el.innerHTML = `
           <div class="overview-wrap">
@@ -2601,19 +2838,43 @@
             </div>
 
             <div class="ver-stack">
-              ${verMini.map(v=>{
-                const b = versionBadge(v.status);
-                const plat = v.platform==='ios'?'📱 iOS' : v.platform==='android'?'🤖 Android' : '🕸 Web';
-                return `
-                  <div class="ver-mini" data-open="version:${esc(v.id)}">
-                    <div class="ver-top">
-                      <div class="ver-num">${esc(v.version_num || '')}</div>
-                      <span class="badge ${b.cls}" data-toggle="version:${esc(v.id)}">${esc(b.label)}</span>
-                    </div>
-                    <div class="ver-plat">${esc(plat)} · ${esc(v.target_date || '')}</div>
-                  </div>
-                `;
-              }).join('') || `<div class="phase-card">暂无版本数据</div>`}
+              <div class="ver-group">
+                <div class="ver-group-head" data-vgroup="thisweek">
+                  <div class="ver-group-title">本周要发布（周一~周日）</div>
+                  <div class="ver-group-meta">${esc(weekRangeStr)}</div>
+                </div>
+                ${(groups.thisweek||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">本周暂无可解析目标日期的版本</div>`}
+              </div>
+
+              <div class="ver-group">
+                <div class="ver-group-head" data-vgroup="future">
+                  <div class="ver-group-title">未来版本</div>
+                  <div class="ver-group-meta">${(groups.future||[]).length} 个 · 点击展开</div>
+                </div>
+                <div style="display:${app.overviewGroupOpen.future?'block':'none'};" data-vgroup-body="future">
+                  ${(groups.future||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
+                </div>
+              </div>
+
+              <div class="ver-group">
+                <div class="ver-group-head" data-vgroup="past">
+                  <div class="ver-group-title">历史版本</div>
+                  <div class="ver-group-meta">${(groups.past||[]).length} 个 · 点击展开</div>
+                </div>
+                <div style="display:${app.overviewGroupOpen.past?'block':'none'};" data-vgroup-body="past">
+                  ${(groups.past||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
+                </div>
+              </div>
+
+              <div class="ver-group">
+                <div class="ver-group-head" data-vgroup="other">
+                  <div class="ver-group-title">未识别日期（手工维护）</div>
+                  <div class="ver-group-meta">${(groups.other||[]).length} 个 · 点击展开</div>
+                </div>
+                <div style="display:${app.overviewGroupOpen.other?'block':'none'};" data-vgroup-body="other">
+                  ${(groups.other||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
+                </div>
+              </div>
             </div>
           </div>
         `;
@@ -2622,6 +2883,24 @@
           x.addEventListener('click', ()=>{
             const [kind, id] = x.getAttribute('data-open').split(':');
             openDrawerByKey(kind, id);
+          });
+        });
+        el.querySelectorAll('[data-vertoggle]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const vid = x.getAttribute('data-vertoggle');
+            if(!vid) return;
+            const id = Number(vid);
+            app.overviewVersionExpanded[id] = !app.overviewVersionExpanded[id];
+            render();
+          });
+        });
+        el.querySelectorAll('[data-vgroup]').forEach(x=>{
+          x.addEventListener('click', ()=>{
+            const gid = x.getAttribute('data-vgroup');
+            if(!gid || gid === 'thisweek') return;
+            app.overviewGroupOpen[gid] = !app.overviewGroupOpen[gid];
+            render();
           });
         });
         el.querySelectorAll('[data-toggle]').forEach(x=>{
