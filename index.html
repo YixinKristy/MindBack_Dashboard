@@ -3974,12 +3974,14 @@
           const ids = new Set(groups.thisweek.map(v=>v.id));
           for(const v of picked){
             if(!ids.has(v.id)){
-              // 兜底版本没有 week_start/target_date 时，也要能进入“近三周”展示
-              if(!v.week_start && !v.target_date) v._fallback_week_start = ymd(wStart);
-              groups.thisweek.push(v);
-              // 从其它组移除
-              groups.future = groups.future.filter(x=>x.id!==v.id);
-              groups.other = groups.other.filter(x=>x.id!==v.id);
+              // 兜底只用于“没有日期”的版本；禁止把明确属于未来/过去的版本塞进本周
+              const d = weekDateOfVersion(v);
+              if(!d){
+                v._fallback_week_start = ymd(wStart);
+                groups.thisweek.push(v);
+                // 从其它组移除
+                groups.other = groups.other.filter(x=>x.id!==v.id);
+              }
             }
           }
         };
@@ -4167,7 +4169,7 @@
             ...nextArr.map(v=>v.id),
           ]);
           const past = (groups.past||[]).filter(v=>set.has(v.id));
-          const thisweek = (groups.thisweek||[]).filter(v=>set.has(v.id));
+          const thisweek = (thisWeekStrict||[]).filter(v=>set.has(v.id));
           const future = (groups.future||[]).filter(v=>set.has(v.id));
           const other = (groups.other||[]).filter(v=>set.has(v.id));
           return { past, thisweek, future, other };
