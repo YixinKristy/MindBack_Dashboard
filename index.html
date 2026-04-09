@@ -2378,37 +2378,41 @@
       }
 
       async function drawerSave(){
-        const { kind, row } = app.drawer;
-        const name = $('f_name') ? $('f_name').value.trim() : '';
-        const status = $('f_status') ? $('f_status').value : '';
-        const priority = $('f_priority') ? $('f_priority').value : null;
-        const due = $('f_due') ? $('f_due').value.trim() : null;
-        const note = $('f_note') ? $('f_note').value : '';
-        const module = $('f_module') ? $('f_module').value.trim() : null;
-        const focus = $('f_focus') ? ($('f_focus').value === 'true') : null;
-        const phaseTheme = $('f_phase_theme') ? $('f_phase_theme').value.trim() : null;
-        const phaseRange = $('f_phase_range') ? $('f_phase_range').value.trim() : null;
-        const phaseDesc = $('f_phase_desc') ? $('f_phase_desc').value : null;
-        const owners = $('f_owners')
-          ? String($('f_owners').value || '')
-            .split(',')
-            .map(s=>s.trim())
-            .filter(Boolean)
-          : null;
-        const versBundle = (kind === 'task' || kind === 'bug' || kind === 'ops')
-          ? taskVersionBundleFromSelects('f_v_ios', 'f_v_android', 'f_v_web')
-          : null;
-        const thisWeekTask = kind === 'task' && $('f_this_week') ? ($('f_this_week').value === 'true') : null;
-        const taskTypeVal = kind === 'task' && $('f_task_type') ? $('f_task_type').value : null;
-        const sourceVal = kind === 'task' && $('f_source') ? $('f_source').value : null;
-        const milestoneVal = kind === 'task' && $('f_milestone') ? String($('f_milestone').value || '').trim() : null;
-        const isArchivedVal = kind === 'task' && $('f_archived') ? ($('f_archived').value === 'true') : null;
-        const platformVal = kind === 'version' && $('f_platform') ? $('f_platform').value : null;
-        const weekStartVal = kind === 'version' && $('f_week_start') ? $('f_week_start').value.trim() : null;
-        const versionInternalSave = kind === 'version' && $('f_version_notes') ? $('f_version_notes').value : '';
-
-        const before = structuredClone(findRow(kind, row.id));
         try{
+          const { kind, row } = app.drawer;
+          if(!row || row.id === undefined || row.id === null){
+            toast('bad', '保存失败：未找到当前记录');
+            return;
+          }
+          const name = $('f_name') ? $('f_name').value.trim() : '';
+          const status = $('f_status') ? $('f_status').value : '';
+          const priority = $('f_priority') ? $('f_priority').value : null;
+          const due = $('f_due') ? $('f_due').value.trim() : null;
+          const note = $('f_note') ? $('f_note').value : '';
+          const module = $('f_module') ? $('f_module').value.trim() : null;
+          const focus = $('f_focus') ? ($('f_focus').value === 'true') : null;
+          const phaseTheme = $('f_phase_theme') ? $('f_phase_theme').value.trim() : null;
+          const phaseRange = $('f_phase_range') ? $('f_phase_range').value.trim() : null;
+          const phaseDesc = $('f_phase_desc') ? $('f_phase_desc').value : null;
+          const owners = $('f_owners')
+            ? String($('f_owners').value || '')
+              .split(',')
+              .map(s=>s.trim())
+              .filter(Boolean)
+            : null;
+          const versBundle = (kind === 'task' || kind === 'bug' || kind === 'ops')
+            ? taskVersionBundleFromSelects('f_v_ios', 'f_v_android', 'f_v_web')
+            : null;
+          const thisWeekTask = kind === 'task' && $('f_this_week') ? ($('f_this_week').value === 'true') : null;
+          const taskTypeVal = kind === 'task' && $('f_task_type') ? $('f_task_type').value : null;
+          const sourceVal = kind === 'task' && $('f_source') ? $('f_source').value : null;
+          const milestoneVal = kind === 'task' && $('f_milestone') ? String($('f_milestone').value || '').trim() : null;
+          const isArchivedVal = kind === 'task' && $('f_archived') ? ($('f_archived').value === 'true') : null;
+          const platformVal = kind === 'version' && $('f_platform') ? $('f_platform').value : null;
+          const weekStartVal = kind === 'version' && $('f_week_start') ? $('f_week_start').value.trim() : null;
+          const versionInternalSave = kind === 'version' && $('f_version_notes') ? $('f_version_notes').value : '';
+
+          const before = structuredClone(findRow(kind, row.id));
           // optimistic update
           if(kind==='phase'){
             applyLocal(kind, row.id, {
@@ -2536,20 +2540,7 @@
           closeDrawer();
         }catch(e){
           console.warn(e);
-          // 保持前端变更不回滚，进入待同步队列
-          if(before){
-            // 不回滚，只是记录到队列
-          }
-          enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue: row.id, patch });
-          saveLocalDraft();
-          if(String(e.message||'').includes('not_authenticated')){
-            toast('warn', '未登录：已在前端生效，待登录后同步');
-          }else if(e && (e.status===401 || e.status===403)){
-            toast('warn', 'RLS 未放开：已在前端生效，待修复后同步');
-          }else{
-            toast('warn', '网络/接口失败：已在前端生效，待同步');
-          }
-          closeDrawer();
+          toast('bad', '保存失败：前端异常（请刷新后重试）');
         }
       }
 
