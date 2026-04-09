@@ -561,7 +561,7 @@
         font-size: 14px;
         font-weight: 950;
         letter-spacing: 0.02em;
-        color:#ff6b6b;
+        color:#b4c5ff;
       }
       .kpi-body-md{ font-size: 14px; font-weight: 600; letter-spacing: 0.03em; color:#e2e4f0; }
       .kpi-headline{ font-family: var(--font-display); font-size: 24px; font-weight: 800; letter-spacing: 0.02em; }
@@ -2021,6 +2021,8 @@
       }
 
       async function loadBoard(){
+        const now = new Date();
+        const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
         const [phases, versions, milestones, tasks, bugs, ops, backlog, overviewRows] = await Promise.all([
           selectTable('phases', '*', 'order=sort_order.asc'),
           selectTable('versions', '*', 'order=sort_order.asc'),
@@ -2029,7 +2031,8 @@
           selectTable('bugs', '*', 'order=sort_order.asc,id.asc'),
           selectTable('ops_actions', '*', 'order=sort_order.asc,id.asc'),
           selectTable('backlog', '*', 'order=id.asc'),
-          selectTable('board_overview', '*', 'order=month_key.desc&limit=1'),
+          // 月目标按当前月份取值，避免取到未来/历史月份导致“目标取错”
+          selectTable('board_overview', '*', `month_key=eq.${encodeURIComponent(monthKey)}&limit=1`),
         ]);
         const currentPhase = (Array.isArray(phases) ? phases : []).find(p=>p && p.is_current) || (phases||[])[0] || null;
         const overview = (Array.isArray(overviewRows) ? overviewRows[0] : null) || null;
