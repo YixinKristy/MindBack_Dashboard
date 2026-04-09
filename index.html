@@ -2046,6 +2046,7 @@
         return kind==='task' ? 'tasks'
           : kind==='bug' ? 'bugs'
           : kind==='ops' ? 'ops_actions'
+          : kind==='phase' ? 'phases'
           : kind==='milestone' ? 'milestones'
           : kind==='version' ? 'versions'
           : kind==='backlog' ? 'backlog'
@@ -2056,6 +2057,7 @@
         if(kind==='task') return (app.board.tasks||[]).find(x=>x && x.id===nid);
         if(kind==='bug') return (app.board.bugs||[]).find(x=>x && x.id===nid);
         if(kind==='ops') return (app.board.ops||[]).find(x=>x && x.id===nid);
+        if(kind==='phase') return (app.board.phases||[]).find(x=>x && Number(x.id)===Number(nid));
         if(kind==='version') return (app.board.versions||[]).find(x=>x && x.id===nid);
         if(kind==='milestone') return (app.board.milestones||[]).find(x=>x && x.id===String(id));
         if(kind==='backlog') return (app.board.backlog||[]).find(x=>x && x.id===nid);
@@ -2066,6 +2068,7 @@
         const listName = kind==='task' ? 'tasks'
           : kind==='bug' ? 'bugs'
           : kind==='ops' ? 'ops'
+          : kind==='phase' ? 'phases'
           : kind==='milestone' ? 'milestones'
           : kind==='version' ? 'versions'
           : kind==='backlog' ? 'backlog'
@@ -2099,6 +2102,7 @@
         return kind==='task' ? '编辑任务'
           : kind==='bug' ? '编辑 Bug'
           : kind==='ops' ? '编辑运营动作'
+          : kind==='phase' ? '编辑阶段'
           : kind==='milestone' ? '编辑里程碑'
           : kind==='version' ? '编辑版本'
           : kind==='backlog' ? '编辑 Backlog'
@@ -2135,9 +2139,12 @@
         const foot = $('drawerFoot');
 
         const nameValue = kind==='milestone' ? (row.title || '')
+          : kind==='phase' ? (row.name || '')
           : kind==='version' ? (row.version_num || '')
           : (row.name || '');
-        const statusValue = kind==='milestone' ? msStatusToTaskStatus(row.status) : (kind==='version' ? (row.status || 'dev') : (row.status || 'ns'));
+        const statusValue = kind==='milestone' ? msStatusToTaskStatus(row.status)
+          : (kind==='version' ? (row.status || 'dev')
+            : (kind==='ops' ? (row.status || 'plan') : (row.status || 'ns')));
         const priorityValue = row.priority || 'p2';
         const dueValue = kind==='task' ? (row.due_date || '')
           : kind==='bug' ? (row.due_date || '')
@@ -2148,19 +2155,36 @@
         const moduleValue = row.module || '';
         const ownersValue = Array.isArray(row.owners) ? row.owners.join(',') : '';
         const dueLabel = kind==='ops' ? '目标日期' : '截止日期';
+        const phaseThemeValue = kind==='phase' ? (row.theme || '') : '';
+        const phaseRangeValue = kind==='phase' ? (row.month_range || '') : '';
+        const phaseDescValue = kind==='phase' ? (row.description || '') : '';
 
         body.innerHTML = `
           <div class="field">
-            <div class="label">${kind==='version' ? '版本号' : kind==='milestone' ? '标题' : '名称'}</div>
+            <div class="label">${kind==='version' ? '版本号' : kind==='milestone' ? '标题' : kind==='phase' ? '阶段名称' : '名称'}</div>
             <input class="input" id="f_name" value="${esc(nameValue)}" />
           </div>
+          ${kind==='phase' ? `
+            <div class="field">
+              <div class="label">大目标</div>
+              <input class="input" id="f_phase_theme" value="${esc(phaseThemeValue)}" placeholder="例如：稳功能基础" />
+            </div>
+            <div class="field">
+              <div class="label">时间范围</div>
+              <input class="input" id="f_phase_range" value="${esc(phaseRangeValue)}" placeholder="点击选择日期范围…" readonly />
+            </div>
+            <div class="field">
+              <div class="label">阶段说明</div>
+              <textarea class="textarea" id="f_phase_desc" placeholder="对该阶段的补充说明（可选）">${esc(phaseDescValue)}</textarea>
+            </div>
+          ` : ''}
           ${kind==='version' && row.slug ? `
             <div class="field" style="opacity:.85;font-size:12px;color:var(--text-secondary);">
               <span class="label">Slug（只读）</span>
               <div>${esc(row.slug)}</div>
             </div>
           ` : ''}
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div style="display:${kind==='phase'?'none':'grid'};grid-template-columns:1fr 1fr;gap:12px;">
             <div class="field">
               <div class="label">状态</div>
               <select class="select" id="f_status">${statusOptions(kind, statusValue)}</select>
@@ -2337,6 +2361,16 @@
             });
           }
         }
+        if(kind==='phase'){
+          const r = $('f_phase_range');
+          if(r){
+            r.addEventListener('click', ()=>{
+              openDateOrRangePicker('f_phase_range');
+              // 默认用范围模式
+              setTimeout(()=> setDatePickerMode('range'), 0);
+            });
+          }
+        }
       }
 
       async function drawerSave(){
@@ -2348,6 +2382,9 @@
         const note = $('f_note') ? $('f_note').value : '';
         const module = $('f_module') ? $('f_module').value.trim() : null;
         const focus = $('f_focus') ? ($('f_focus').value === 'true') : null;
+        const phaseTheme = $('f_phase_theme') ? $('f_phase_theme').value.trim() : null;
+        const phaseRange = $('f_phase_range') ? $('f_phase_range').value.trim() : null;
+        const phaseDesc = $('f_phase_desc') ? $('f_phase_desc').value : null;
         const owners = $('f_owners')
           ? String($('f_owners').value || '')
             .split(',')
@@ -2369,7 +2406,14 @@
         const before = structuredClone(findRow(kind, row.id));
         try{
           // optimistic update
-          if(kind==='milestone'){
+          if(kind==='phase'){
+            applyLocal(kind, row.id, {
+              name,
+              theme: phaseTheme,
+              month_range: phaseRange,
+              description: phaseDesc,
+            });
+          }else if(kind==='milestone'){
             applyLocal(kind, row.id, { title: name, status: taskStatusToMsStatus(status), delayed_note: note });
           }else if(kind==='version'){
             applyLocal(kind, row.id, {
@@ -2417,7 +2461,12 @@
           render();
 
           const patch = {};
-          if(kind==='milestone'){
+          if(kind==='phase'){
+            patch.name = name;
+            patch.theme = phaseTheme;
+            patch.month_range = phaseRange;
+            patch.description = phaseDesc;
+          }else if(kind==='milestone'){
             patch.title = name;
             patch.status = taskStatusToMsStatus(status);
             patch.delayed_note = note;
@@ -4047,14 +4096,33 @@
           byPhase.get(pid).push(m);
         });
 
+        const phaseLabelForAxis = (p)=>{
+          const raw = String(p?.month_range || '').trim();
+          if(raw.includes('~')){
+            const [a,b] = raw.split('~').map(x=>x.trim());
+            const d1 = parseYmdLocal(a), d2 = parseYmdLocal(b);
+            if(d1 && d2){
+              // 同月：显示“2026年4月”；跨月：显示“2026年7-8月”
+              const y1 = d1.getFullYear(), y2 = d2.getFullYear();
+              const m1 = d1.getMonth()+1, m2 = d2.getMonth()+1;
+              if(y1===y2){
+                if(m1===m2) return `${y1}年${m1}月`;
+                return `${y1}年${m1}-${m2}月`;
+              }
+              return `${y1}年${m1}月-${y2}年${m2}月`;
+            }
+          }
+          return raw;
+        };
+
         el.innerHTML = `
           <div class="phase-axis">
             <div class="axis-line">
               ${phases.map((p)=>{
                 const cls = p.is_current ? 'axis-node current' : ((p.sort_order||0) < currentSort ? 'axis-node past' : 'axis-node');
-                const name = `${p.month_range || ''}·${p.theme || p.name || ''}`.replace(/^\s*·\s*/,'').replace(/\s*·\s*$/,'');
+                const name = `${phaseLabelForAxis(p) || ''}·${p.theme || p.name || ''}`.replace(/^\s*·\s*/,'').replace(/\s*·\s*$/,'');
                 return `
-                  <div class="${cls}">
+                  <div class="${cls}" data-open="phase:${esc(p.id)}" title="点击编辑阶段">
                     <div class="node-dot"></div>
                     <div class="node-name">${esc(name || p.name || '阶段')}</div>
                   </div>
@@ -4069,7 +4137,7 @@
             return `
               <div class="ms-group" style="${isCurrent?'background: rgba(37,39,49,0.9);':''}">
                 <div class="group-head">
-                  <span class="group-badge">${esc(`${p.name || ''}·${p.month_range || ''}`.replace(/\s*·\s*$/,''))}</span>
+                  <span class="group-badge" data-open="phase:${esc(p.id)}" style="cursor:pointer;" title="点击编辑阶段">${esc(`${p.name || ''}·${phaseLabelForAxis(p) || ''}`.replace(/\s*·\s*$/,''))}</span>
                   <span style="color:var(--text-secondary);font-size:12px;">${esc(p.theme || '')}</span>
                 </div>
                 <div class="milestone-list">
@@ -4083,7 +4151,7 @@
                           <span class="ms-date">${esc(d)}</span>
                           <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
                         </div>
-                        <span class="badge ${b.cls}" data-toggle="milestone:${esc(m.id)}">${esc(b.label)}</span>
+                        ${statusSelectHTML('milestone', m)}
                       </div>
                     `;
                   }).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
@@ -4099,12 +4167,13 @@
             openDrawerByKey(kind, id);
           });
         });
-        el.querySelectorAll('[data-toggle]').forEach(x=>{
-          x.addEventListener('click', async (e)=>{
-            e.stopPropagation();
-            const [kind, id] = x.getAttribute('data-toggle').split(':');
-            await toggleStatus(kind, id);
+        el.querySelectorAll('[data-statuspick]').forEach(x=>{
+          x.addEventListener('change', async ()=>{
+            const [kind, id] = x.getAttribute('data-statuspick').split(':');
+            x.className = ('select ' + (x.value ? ('status-' + x.value) : '')).trim();
+            await updateStatusByPick(kind, String(id), x.value);
           });
+          x.addEventListener('click', (e)=> e.stopPropagation());
         });
       }
 
