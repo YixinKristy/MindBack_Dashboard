@@ -288,10 +288,28 @@
         transition: opacity .15s ease, background .15s ease;
       }
       .badge:hover{ opacity: 1.1; }
-      .badge.prog{ background: rgba(249,189,34,0.15); color: var(--tertiary); }
-      .badge.done{ background: rgba(69,223,164,0.15); color: var(--secondary); }
-      .badge.block{ background: rgba(255,107,107,0.15); color: var(--danger); }
+      /* 全局状态色（与设计规范 tokens 对齐：primary/secondary/tertiary/danger/text-secondary） */
       .badge.ns{ background: rgba(46,47,58,0.8); color: var(--text-secondary); }
+      .badge.prog{ background: rgba(249,189,34,0.15); color: var(--tertiary); }
+      .badge.block{ background: rgba(255,107,107,0.15); color: var(--danger); }
+      .badge.done{ background: rgba(69,223,164,0.15); color: var(--secondary); }
+      /* 版本状态需要更细颗粒度 */
+      .badge.dev{ background: rgba(46,47,58,0.8); color: var(--text-secondary); }
+      .badge.testing{ background: rgba(180,197,255,0.18); color: var(--primary); }
+      .badge.submitted{ background: rgba(249,189,34,0.15); color: var(--tertiary); }
+      .badge.released{ background: rgba(69,223,164,0.15); color: var(--secondary); }
+
+      /* 下拉状态也使用同一套颜色（避免误触并保持全局一致） */
+      .select.status-ns{ color: var(--text-secondary); background: rgba(46,47,58,0.55); }
+      .select.status-prog{ color: var(--tertiary); background: rgba(249,189,34,0.10); }
+      .select.status-block{ color: var(--danger); background: rgba(255,107,107,0.10); }
+      .select.status-done{ color: var(--secondary); background: rgba(69,223,164,0.10); }
+      .select.status-plan{ color: var(--text-secondary); background: rgba(46,47,58,0.55); }
+      .select.status-pause{ color: var(--danger); background: rgba(255,107,107,0.10); }
+      .select.status-dev{ color: var(--text-secondary); background: rgba(46,47,58,0.55); }
+      .select.status-testing{ color: var(--primary); background: rgba(180,197,255,0.10); }
+      .select.status-submitted{ color: var(--tertiary); background: rgba(249,189,34,0.10); }
+      .select.status-released{ color: var(--secondary); background: rgba(69,223,164,0.10); }
 
       /* ── ThisWeek: focus cards（每行 4 张，多行向下排，不横滑） ── */
       .focus-grid{
@@ -601,7 +619,7 @@
         min-width:0;
       }
       .ms-date{
-        color: var(--text-secondary);
+        color: var(--text-disabled);
         font-size: 12px;
         flex-shrink:0;
       }
@@ -1568,7 +1586,7 @@
         if(kind === 'version'){
           const cur = row.status || 'dev';
           return `
-            <select class="select" data-statuspick="version:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+            <select class="select status-${esc(cur)}" data-statuspick="version:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
               <option value="dev" ${cur==='dev'?'selected':''}>开发中</option>
               <option value="testing" ${cur==='testing'?'selected':''}>测试中</option>
               <option value="submitted" ${cur==='submitted'?'selected':''}>已提审</option>
@@ -1580,7 +1598,7 @@
           const cur = msStatusToTaskStatus(row.status || 'plan');
           const opts = ['ns','prog','block','done'];
           return `
-            <select class="select" data-statuspick="milestone:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+            <select class="select status-${esc(cur)}" data-statuspick="milestone:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
               ${opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('')}
             </select>
           `;
@@ -1588,7 +1606,7 @@
         if(kind === 'ops'){
           const cur = row.status || 'plan';
           return `
-            <select class="select" data-statuspick="ops:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+            <select class="select status-${esc(cur)}" data-statuspick="ops:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
               <option value="plan" ${cur==='plan'?'selected':''}>计划中</option>
               <option value="prog" ${cur==='prog'?'selected':''}>进行中</option>
               <option value="done" ${cur==='done'?'selected':''}>已完成</option>
@@ -1600,7 +1618,7 @@
         const cur = row.status || 'ns';
         const opts = ['ns','prog','block','done'];
         return `
-          <select class="select" data-statuspick="${esc(kind)}:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+          <select class="select status-${esc(cur)}" data-statuspick="${esc(kind)}:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
             ${opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('')}
           </select>
         `;
@@ -1636,10 +1654,10 @@
 
       function versionBadge(status){
         const map = {
-          dev: { cls:'ns', label:'开发中' },
-          testing: { cls:'prog', label:'测试中' },
-          submitted: { cls:'prog', label:'已提审' },
-          released: { cls:'done', label:'已发布' },
+          dev: { cls:'dev', label:'开发中' },
+          testing: { cls:'testing', label:'测试中' },
+          submitted: { cls:'submitted', label:'已提审' },
+          released: { cls:'released', label:'已发布' },
         };
         return map[status] || { cls:'ns', label:'未知' };
       }
@@ -2944,6 +2962,8 @@
           x.addEventListener('change', async (e)=>{
             e.stopPropagation();
             const [kind, id] = x.getAttribute('data-statuspick').split(':');
+            // 即时更新下拉颜色（全局统一）
+            x.className = ('select ' + (x.value ? ('status-' + x.value) : '')).trim();
             await updateStatusByPick(kind, Number(id), x.value);
           });
           x.addEventListener('click', (e)=> e.stopPropagation());
@@ -3357,6 +3377,7 @@
         const platLabel = (p)=> p==='ios'?'iOS' : p==='android'?'Android' : 'Web';
         const versions = (app.board.versions || []).filter(v=>v && v.platform===app.versionsPlatform);
         const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
+        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived);
 
         el.innerHTML = `
           <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;">
@@ -3375,6 +3396,9 @@
                   || Number(t.version_android_id) === Number(id)
                   || Number(t.version_web_id) === Number(id);
               });
+              const vNew = vTasks.filter(t=> (t.task_type || 'task') === 'task');
+              const vFix = vTasks.filter(t=> (t.task_type || 'task') !== 'task');
+              const vBugs = bugs.filter(bg=> linkedByVersion(bg, v.id));
               return `
                 <div class="version-card">
                   <div class="version-head" data-open="version:${esc(v.id)}">
@@ -3385,17 +3409,46 @@
                     <button class="btn" type="button" data-addtaskfor="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;">+ 新增功能</button>
                   </div>
                   <div class="version-tasks">
-                    ${vTasks.map(t=>{
-                      const done = t.status==='done';
-                      const tb = taskStatusBadge(t.status);
-                      return `
-                        <div class="chk-row" data-open="task:${esc(t.id)}">
-                          <span class="chk ${done?'done':''}">${done?'✓':''}</span>
-                          <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
-                          ${statusSelectHTML('task', t)}
-                        </div>
-                      `;
-                    }).join('') || `<div style="color:var(--text-secondary);padding:6px 8px;">暂无任务</div>`}
+                    <div style="display:flex;align-items:center;justify-content:space-between;color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:0.04em;padding:4px 6px;">
+                      <span>新功能（${vNew.length}）</span>
+                      <span>Bug 修复（${vFix.length + vBugs.length}）</span>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr;gap:10px;">
+                      <div>
+                        ${(vNew.map(t=>{
+                          const done = t.status==='done';
+                          return `
+                            <div class="chk-row" data-open="task:${esc(t.id)}">
+                              <span class="chk ${done?'done':''}">${done?'✓':''}</span>
+                              <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
+                              ${statusSelectHTML('task', t)}
+                            </div>
+                          `;
+                        }).join('')) || `<div style="color:var(--text-secondary);padding:6px 8px;">暂无新功能</div>`}
+                      </div>
+                      <div>
+                        ${(vFix.map(t=>{
+                          const done = t.status==='done';
+                          return `
+                            <div class="chk-row" data-open="task:${esc(t.id)}">
+                              <span class="chk ${done?'done':''}">${done?'✓':''}</span>
+                              <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
+                              ${statusSelectHTML('task', t)}
+                            </div>
+                          `;
+                        }).join('')) || ``}
+                        ${(vBugs.map(bg=>{
+                          const badge = taskStatusBadge(bg.status || 'ns');
+                          return `
+                            <div class="chk-row" data-open="bug:${esc(bg.id)}">
+                              <span class="chk ${bg.status==='done'?'done':''}">${bg.status==='done'?'✓':''}</span>
+                              <span class="chk-name ${bg.status==='done'?'done':''}">${esc(bg.name || '未命名')}</span>
+                              ${statusSelectHTML('bug', bg)}
+                            </div>
+                          `;
+                        }).join('')) || `<div style="color:var(--text-secondary);padding:6px 8px;">暂无 Bug 修复</div>`}
+                      </div>
+                    </div>
                   </div>
                   <div style="margin-top:10px;color:var(--text-secondary);font-size:12px;">
                     ${esc(v.status==='submitted' ? ('提审：' + (v.submitted_at ? String(v.submitted_at).slice(0,10) : '—')) : ('目标：' + (v.target_date || '—')))}
