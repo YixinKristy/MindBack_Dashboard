@@ -3024,15 +3024,12 @@
         const wEnd = endOfWeekSunday(now);
 
         const classify = (v)=>{
-          // 已提审/已发布：默认视为历史（用户语义：提审通过 = 上周历史）
-          if(v?.status === 'submitted' || v?.status === 'released') return 'past';
           const d = parseYmdLocal(v?.target_date);
           if(d){
             if(isInSameWeekMondayToSunday(d, now)) return 'thisweek';
             if(d.getTime() < wStart.getTime()) return 'past';
             if(d.getTime() > wEnd.getTime()) return 'future';
           }
-          // 无法解析日期的：先归到 other（可手工维护）
           return 'other';
         };
 
@@ -3090,9 +3087,8 @@
         }
         function listByVersion(vid){
           return {
-            // 总览版本下只展示已完成结项的功能
-            t: tasks.filter(x=> linkedByVersion(x, vid) && x.status === 'done'),
-            // Bug/运营展示全部（含 done），用于回溯发版问题与验收
+            // 总览展示真实关联内容（不只结项）
+            t: tasks.filter(x=> linkedByVersion(x, vid)),
             b: bugs.filter(x=> linkedByVersion(x, vid)),
             o: ops.filter(x=> linkedByVersion(x, vid)),
           };
@@ -3208,27 +3204,60 @@
 
         const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
 
-        // 总览最多展示 3 个版本；未来版本若无内容则不展示
+        // 总览固定展示近三周：上周 / 本周 / 下周（各周取“最新的一个版本”；若缺失则降级补位）
         const pickTop3 = ()=>{
-          const pickFromContent = (arr)=> arr.filter(v=>v && hasAnyContent(v.id));
-          // 本周版本永远展示（即使暂时没有“已结项功能”）
-          const week = (groups.thisweek || []).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
-          const past = pickFromContent(groups.past).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
-          const future = pickFromContent(groups.future).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
-          const other = pickFromContent(groups.other).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
-          const chosen = [];
-          const pushN = (list)=>{ for(const v of list){ if(chosen.length>=3) break; if(!chosen.some(x=>x.id===v.id)) chosen.push(v); } };
-          pushN(week);
-          pushN(past);
-          pushN(future);
-          pushN(other);
-          const set = new Set(chosen.map(v=>v.id));
-          return {
-            past: past.filter(v=>set.has(v.id)),
-            thisweek: week.filter(v=>set.has(v.id)),
-            future: future.filter(v=>set.has(v.id)),
-            other: other.filter(v=>set.has(v.id)),
+          const weekStartOf = (v)=>{
+            const d = parseYmdLocal(v?.target_date);
+            if(!d) return null;
+            return startOfWeekMonday(d).getTime();
           };
+          const curW = startOfWeekMonday(now).getTime();
+          const prevW = new Date(wStart); prevW.setDate(prevW.getDate()-7);
+          const nextW = new Date(wStart); nextW.setDate(nextW.getDate()+7);
+          const prevKey = startOfWeekMonday(prevW).getTime();
+          const nextKey = startOfWeekMonday(nextW).getTime();
+
+          const byWeek = new Map(); // key -> versions[]
+          for(const v of versAll){
+            const k = weekStartOf(v);
+            if(k==null) continue;
+            if(!byWeek.has(k)) byWeek.set(k, []);
+            byWeek.get(k).push(v);
+          }
+          const pickOne = (k)=>{
+            const arr = (byWeek.get(k) || []).slice();
+            // 同一周多个版本时，取 sort_order 最大（最新）
+            arr.sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+            return arr[0] || null;
+          };
+          const prev = pickOne(prevKey);
+          const cur = pickOne(curW);
+          const nxt = pickOne(nextKey);
+
+          const chosen = [prev, cur, nxt].filter(Boolean);
+          // 若缺失（比如下周未规划），用“最近未来/最近过去”补齐到最多 3 个
+          if(chosen.length < 3){
+            const rest = versAll
+              .filter(v=>v && !chosen.some(x=>x.id===v.id))
+              .filter(v=>parseYmdLocal(v?.target_date))
+              .slice()
+              .sort((a,b)=>{
+                const da = parseYmdLocal(a.target_date).getTime();
+                const db = parseYmdLocal(b.target_date).getTime();
+                return da - db;
+              });
+            for(const v of rest){
+              if(chosen.length>=3) break;
+              chosen.push(v);
+            }
+          }
+
+          const set = new Set(chosen.map(v=>v.id));
+          const past = (groups.past||[]).filter(v=>set.has(v.id));
+          const thisweek = (groups.thisweek||[]).filter(v=>set.has(v.id));
+          const future = (groups.future||[]).filter(v=>set.has(v.id));
+          const other = (groups.other||[]).filter(v=>set.has(v.id));
+          return { past, thisweek, future, other };
         };
         const top3 = pickTop3();
 
