@@ -2044,7 +2044,7 @@
             op.tries = (op.tries || 0) + 1;
             op.lastError = e?.message || String(e);
             saveQueue();
-            toast('bad', '同步失败：检查 RLS/网络');
+            toast('bad', `同步失败：${op.table}（${e?.status || ''}）${String(e?.message||'')}`.trim());
             break;
           }
         }
@@ -2211,6 +2211,8 @@
         const phaseThemeValue = kind==='phase' ? (row.theme || '') : '';
         const phaseRangeValue = kind==='phase' ? (row.month_range || '') : '';
         const phaseDescValue = kind==='phase' ? (row.description || '') : '';
+        const riskVal = !!row.is_risk;
+        const riskNoteVal = row.risk_note || '';
 
         body.innerHTML = `
           <div class="field">
@@ -2361,6 +2363,18 @@
                 <option value="true" ${row.is_focus ? 'selected' : ''}>是</option>
               </select>
             </div>
+            <div class="field">
+              <div class="label">是否有风险</div>
+              <div style="display:flex;gap:10px;">
+                <button class="btn ${riskVal?'primary':'ghost'}" type="button" id="f_risk_yes" style="flex:1;">是</button>
+                <button class="btn ${riskVal?'ghost':'primary'}" type="button" id="f_risk_no" style="flex:1;">否</button>
+              </div>
+              <input type="hidden" id="f_is_risk" value="${riskVal?'true':'false'}" />
+            </div>
+            <div class="field" id="f_risk_note_wrap" style="display:${riskVal?'block':'none'};">
+              <div class="label">风险描述（可选）</div>
+              <textarea class="textarea" id="f_risk_note" placeholder="不填也可以">${esc(riskNoteVal)}</textarea>
+            </div>
           ` : ''}
 
           <div class="field">
@@ -2422,6 +2436,20 @@
             });
           }
         }
+        if(kind==='task' || kind==='bug' || kind==='ops'){
+          const yes = $('f_risk_yes');
+          const no = $('f_risk_no');
+          const hid = $('f_is_risk');
+          const wrap = $('f_risk_note_wrap');
+          const set = (v)=>{
+            if(hid) hid.value = v ? 'true' : 'false';
+            if(yes) yes.className = `btn ${v?'primary':'ghost'}`;
+            if(no) no.className = `btn ${v?'ghost':'primary'}`;
+            if(wrap) wrap.style.display = v ? 'block' : 'none';
+          };
+          if(yes) yes.addEventListener('click', ()=> set(true));
+          if(no) no.addEventListener('click', ()=> set(false));
+        }
       }
 
       async function drawerSave(){
@@ -2438,6 +2466,8 @@
           const note = $('f_note') ? $('f_note').value : '';
           const module = $('f_module') ? $('f_module').value.trim() : null;
           const focus = $('f_focus') ? ($('f_focus').value === 'true') : null;
+          const isRiskVal = $('f_is_risk') ? ($('f_is_risk').value === 'true') : null;
+          const riskNote = $('f_risk_note') ? $('f_risk_note').value : null;
           const phaseTheme = $('f_phase_theme') ? $('f_phase_theme').value.trim() : null;
           const phaseRange = $('f_phase_range') ? $('f_phase_range').value.trim() : null;
           const phaseDesc = $('f_phase_desc') ? $('f_phase_desc').value : null;
@@ -2482,6 +2512,8 @@
           }else if(kind==='ops'){
             applyLocal(kind, row.id, {
               name, status, target_date: due, note, is_focus: focus,
+              is_risk: isRiskVal,
+              risk_note: isRiskVal ? (riskNote || '') : '',
               version_ios_id: versBundle.version_ios_id,
               version_android_id: versBundle.version_android_id,
               version_web_id: versBundle.version_web_id,
@@ -2490,6 +2522,8 @@
           }else if(kind==='bug'){
             applyLocal(kind, row.id, {
               name, status, due_date: due, note, module, is_focus: focus,
+              is_risk: isRiskVal,
+              risk_note: isRiskVal ? (riskNote || '') : '',
               version_ios_id: versBundle.version_ios_id,
               version_android_id: versBundle.version_android_id,
               version_web_id: versBundle.version_web_id,
@@ -2499,6 +2533,8 @@
           }else if(kind==='task'){
             applyLocal(kind, row.id, {
               name, status, priority, due_date: due, note, module, is_focus: focus, owners: owners || [],
+              is_risk: isRiskVal,
+              risk_note: isRiskVal ? (riskNote || '') : '',
               version_ios_id: versBundle.version_ios_id,
               version_android_id: versBundle.version_android_id,
               version_web_id: versBundle.version_web_id,
@@ -2538,6 +2574,8 @@
             patch.target_date = due;
             patch.note = note;
             patch.is_focus = focus;
+            if(isRiskVal !== null) patch.is_risk = isRiskVal;
+            patch.risk_note = isRiskVal ? (riskNote || '') : '';
             patch.version_ios_id = versBundle.version_ios_id;
             patch.version_android_id = versBundle.version_android_id;
             patch.version_web_id = versBundle.version_web_id;
@@ -2549,6 +2587,8 @@
             patch.note = note;
             patch.module = module;
             patch.is_focus = focus;
+            if(isRiskVal !== null) patch.is_risk = isRiskVal;
+            patch.risk_note = isRiskVal ? (riskNote || '') : '';
             patch.version_ios_id = versBundle.version_ios_id;
             patch.version_android_id = versBundle.version_android_id;
             patch.version_web_id = versBundle.version_web_id;
@@ -2563,6 +2603,8 @@
             patch.module = module;
             patch.is_focus = focus;
             patch.owners = owners || [];
+            if(isRiskVal !== null) patch.is_risk = isRiskVal;
+            patch.risk_note = isRiskVal ? (riskNote || '') : '';
             patch.version_ios_id = versBundle.version_ios_id;
             patch.version_android_id = versBundle.version_android_id;
             patch.version_web_id = versBundle.version_web_id;
@@ -3628,9 +3670,9 @@
           web: pickPlatVer('web'),
         };
 
-        const riskTasks = tasks.filter(t=>t && t.this_week && t.status==='block');
-        const riskBugs = bugs.filter(b=>b && b.status==='block');
-        const riskOps = ops.filter(o=>o && o.status==='pause');
+        const riskTasks = tasks.filter(t=>t && t.is_risk);
+        const riskBugs = bugs.filter(b=>b && b.is_risk);
+        const riskOps = ops.filter(o=>o && o.is_risk);
         const riskCount = riskTasks.length + riskBugs.length + riskOps.length;
         const riskSummary = `功能 ${riskTasks.length}条 · Bug ${riskBugs.length}条 · 运营 ${riskOps.length}条`;
         const riskTone = riskCount===0 ? 'secondary' : (riskCount<=2 ? 'tertiary' : 'error');
@@ -3895,7 +3937,7 @@
                   <div class="kpi-body-md" style="margin-top:8px;">${esc(phaseTitle)}</div>
                   <div class="kpi-gap12"></div>
                   <div class="kpi-h">里程碑</div>
-                  <div class="kpi-headline kpi-primary" style="margin-top:6px;">${esc(keyMsTitle)}</div>
+                  <div class="kpi-headline kpi-primary" style="margin-top:6px;font-size:12px;">${esc(keyMsTitle)}</div>
                   ${keyMsCountdown ? `<div class="kpi-body-md kpi-tertiary" style="margin-top:6px;">${esc(keyMsCountdown)}</div>` : ``}
                 </div>
 
@@ -3943,7 +3985,7 @@
                         return `
                           <div class="kpi-risk-item" data-ovrisk="${esc(it.kind)}:${esc(it.row.id)}">
                             <span class="kpi-src ${srcCls}">${esc(srcLab)}</span>
-                            <div class="kpi-risk-desc">${esc(it.row.name || it.row.title || '未命名')}</div>
+                            <div class="kpi-risk-desc">${esc((it.row.risk_note || '').trim() || it.row.name || it.row.title || '未命名')}</div>
                             <div class="kpi-risk-own">${esc(own)}</div>
                           </div>
                         `;
