@@ -2533,14 +2533,29 @@
             patch.module = module;
           }
 
-          await patchById(kindToTable(kind), 'id', row.id, patch);
-          toast('ok', '已保存');
-          saveLocalDraft();
-          await refreshRemote();
-          closeDrawer();
+          try{
+            await patchById(kindToTable(kind), 'id', row.id, patch);
+            toast('ok', '已保存');
+            saveLocalDraft();
+            await refreshRemote();
+            closeDrawer();
+          }catch(e){
+            console.warn(e);
+            // 保持前端变更不回滚，进入待同步队列
+            enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue: row.id, patch });
+            saveLocalDraft();
+            if(String(e.message||'').includes('not_authenticated')){
+              toast('warn', '未登录：已在前端生效，待登录后同步');
+            }else if(e && (e.status===401 || e.status===403)){
+              toast('warn', 'RLS 未放开：已在前端生效，待修复后同步');
+            }else{
+              toast('warn', '网络/接口失败：已在前端生效，待同步');
+            }
+            closeDrawer();
+          }
         }catch(e){
           console.warn(e);
-          toast('bad', '保存失败：前端异常（请刷新后重试）');
+          toast('bad', `保存失败：${String(e.message||'前端异常')}`);
         }
       }
 
