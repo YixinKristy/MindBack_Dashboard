@@ -1689,6 +1689,47 @@
         }
         app.accessToken = json?.access_token || null;
         app.user = json?.user || null;
+        try{
+          const expiresIn = Number(json?.expires_in || 0);
+          const authCache = {
+            access_token: json?.access_token || null,
+            refresh_token: json?.refresh_token || null,
+            expires_at: expiresIn ? (Date.now() + expiresIn*1000) : null,
+            user: json?.user || null,
+          };
+          localStorage.setItem('mindback_auth_v1', JSON.stringify(authCache));
+        }catch(_e){}
+        return json;
+      }
+
+      async function refreshSession(refreshToken){
+        const path = `/auth/v1/token?grant_type=refresh_token`;
+        const res = await fetch(SUPABASE_URL + path, {
+          method:'POST',
+          headers:{ apikey: SUPABASE_ANON_KEY, 'Content-Type':'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        const text = await res.text();
+        let json = null;
+        try{ json = text ? JSON.parse(text) : null; }catch(_e){}
+        if(!res.ok){
+          const msg = (json && (json.msg || json.message || json.error_description || json.error)) ? (json.msg || json.message || json.error_description || json.error) : text;
+          const err = new Error(msg || ('HTTP ' + res.status));
+          err.status = res.status;
+          throw err;
+        }
+        app.accessToken = json?.access_token || null;
+        app.user = json?.user || null;
+        try{
+          const expiresIn = Number(json?.expires_in || 0);
+          const authCache = {
+            access_token: json?.access_token || null,
+            refresh_token: json?.refresh_token || refreshToken || null,
+            expires_at: expiresIn ? (Date.now() + expiresIn*1000) : null,
+            user: json?.user || null,
+          };
+          localStorage.setItem('mindback_auth_v1', JSON.stringify(authCache));
+        }catch(_e){}
         return json;
       }
 
@@ -4548,6 +4589,24 @@
       (async function init(){
         $('todayStr').textContent = todayStr();
         try{
+          // 自动恢复管理员会话（不保存密码，仅保存 token）
+          try{
+            const rawAuth = localStorage.getItem('mindback_auth_v1');
+            const auth = rawAuth ? JSON.parse(rawAuth) : null;
+            const rt = auth?.refresh_token || null;
+            const at = auth?.access_token || null;
+            const exp = Number(auth?.expires_at || 0);
+            if(rt){
+              // 有 refresh_token：优先刷新一次，保证 token 新鲜
+              await refreshSession(rt);
+              $('adminBtn').textContent = '已登录 ✓';
+            }else if(at){
+              // 仅有 access_token：尽力恢复（可能已过期）
+              app.accessToken = at;
+              app.user = auth?.user || null;
+              $('adminBtn').textContent = '已登录 ✓';
+            }
+          }catch(_e){}
           try{
             const raw = localStorage.getItem('mindback_sidebar_collapsed_v1');
             app.sidebarCollapsed = raw === '1';
