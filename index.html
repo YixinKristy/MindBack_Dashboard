@@ -1457,6 +1457,7 @@
         { id:'overview', label:'总览', ico:'⬤' },
         { id:'thisweek', label:'本周', ico:'⚡' },
         { id:'versions', label:'版本管理', ico:'⬆' },
+        { id:'alltasks', label:'全量任务', ico:'≣' },
         { id:'milestones', label:'里程碑', ico:'◆' },
         { id:'backlog', label:'Backlog', ico:'≡' },
       ];
@@ -2129,6 +2130,7 @@
         if(app.activeTab==='thisweek') return renderThisWeek(el);
         if(app.activeTab==='overview') return renderOverview(el);
         if(app.activeTab==='versions') return renderVersions(el);
+        if(app.activeTab==='alltasks') return renderAllTasks(el);
         if(app.activeTab==='milestones') return renderMilestones(el);
         if(app.activeTab==='backlog') return renderBacklog(el);
       }
@@ -4473,6 +4475,161 @@
         if($('addVersionBtn')){
           $('addVersionBtn').addEventListener('click', ()=> openCreateModalWithDefaults('version', { platform: app.versionsPlatform }));
         }
+      }
+
+      function renderAllTasks(el){
+        const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
+        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived);
+        const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
+        const versions = (app.board.versions || []).filter(v=>v);
+
+        app.allTasksFilter = app.allTasksFilter || { q:'', showDone:false, sort:'manual' };
+        const q = String(app.allTasksFilter.q || '').trim().toLowerCase();
+        const showDone = !!app.allTasksFilter.showDone;
+        const sortKey = app.allTasksFilter.sort || 'manual';
+
+        const hasPlan = (row)=> linkedByVersion(row, row?.version_id) || rowLinkedVersions(row).length > 0 || !!row?.this_week || !!row?.is_focus;
+        const pick = (kind, row)=>{
+          const name = (row?.name || row?.title || '').trim();
+          if(!name) return null;
+          if(!showDone && String(row?.status||'') === 'done') return null;
+          if(!hasPlan(row) && String(row?.status||'') === 'ns') return null;
+          if(q && !name.toLowerCase().includes(q) && !String(row?.note||'').toLowerCase().includes(q)) return null;
+          const vids = rowLinkedVersions(row);
+          const vlabels = vids.map(id=>{
+            const v = versions.find(x=>x && Number(x.id)===Number(id));
+            if(!v) return '';
+            return `${v.platform}:${v.version_num||('#'+v.id)}`;
+          }).filter(Boolean).slice(0,3);
+          const sub = kind==='ops' ? formatDateOrRange(row.target_date||'') : (row.due_date || '');
+          const badge = kind==='ops' ? opsStatusBadge(row.status) : taskStatusBadge(row.status || 'ns');
+          return { kind, id: row.id, name, row, badge, sub, vlabels };
+        };
+
+        const items = [
+          ...tasks.map(r=> pick('task', r)).filter(Boolean),
+          ...bugs.map(r=> pick('bug', r)).filter(Boolean),
+          ...ops.map(r=> pick('ops', r)).filter(Boolean),
+        ];
+
+        const manualRank = (r)=> Number.isFinite(Number(r?.row?.sort_order)) ? Number(r.row.sort_order) : 0;
+        const doneTs = (r)=>{
+          const s = String(r?.row?.done_at || '').trim();
+          if(s){ const d=new Date(s); if(!Number.isNaN(d.getTime())) return d.getTime(); }
+          const u = String(r?.row?.updated_at || '').trim();
+          if(u){ const d=new Date(u); if(!Number.isNaN(d.getTime())) return d.getTime(); }
+          return 0;
+        };
+        const kindRank = (k)=> k==='task'?0 : k==='bug'?1 : 2;
+        const sorted = items.slice().sort((a,b)=>{
+          if(sortKey === 'done_time'){
+            const ad = String(a.row?.status||'')==='done' ? 0 : 1;
+            const bd = String(b.row?.status||'')==='done' ? 0 : 1;
+            if(ad!==bd) return ad-bd;
+            if(ad===0) return doneTs(b)-doneTs(a);
+          }
+          if(sortKey === 'priority'){
+            const ap = a.kind==='task' ? priRank(a.row?.priority) : 9;
+            const bp = b.kind==='task' ? priRank(b.row?.priority) : 9;
+            if(ap!==bp) return ap-bp;
+          }
+          // manual-ish: type then sort_order then id
+          return kindRank(a.kind)-kindRank(b.kind) || manualRank(a)-manualRank(b) || Number(a.id)-Number(b.id);
+        });
+
+        el.innerHTML = `
+          <div class="section">
+            <div class="kicker">全量任务</div>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:10px;">
+              <input class="input" id="allQ" placeholder="搜索名称/备注…" value="${esc(app.allTasksFilter.q||'')}" style="max-width:360px;" />
+              <select class="select" id="allSort" style="width:auto;min-width:160px;">
+                <option value="manual" ${sortKey==='manual'?'selected':''}>默认顺序</option>
+                <option value="priority" ${sortKey==='priority'?'selected':''}>按优先级（任务）</option>
+                <option value="done_time" ${sortKey==='done_time'?'selected':''}>按完成时间</option>
+              </select>
+              <label style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.03em;">
+                <input type="checkbox" id="allShowDone" ${showDone?'checked':''} />
+                显示已完成
+              </label>
+              <div style="margin-left:auto;color:var(--text-secondary);font-size:12px;">共 ${sorted.length} 条</div>
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="columns3">
+              <div class="col">
+                <div class="col-head">
+                  <div class="col-title">功能</div>
+                  <button class="add-btn" id="allAddTask" type="button">+ 添加</button>
+                </div>
+                <div class="list">
+                  ${sorted.filter(x=>x.kind==='task').map(it=>`
+                    <div class="row-item dev" data-open="task:${esc(it.id)}">
+                      <div class="row-name">${esc(it.name)}</div>
+                      <div class="dot ${esc(dotCls(it.row.status))}"></div>
+                    </div>
+                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                </div>
+              </div>
+              <div class="col">
+                <div class="col-head">
+                  <div class="col-title">Bug</div>
+                  <button class="add-btn" id="allAddBug" type="button">+ 添加</button>
+                </div>
+                <div class="list">
+                  ${sorted.filter(x=>x.kind==='bug').map(it=>`
+                    <div class="row-item bug" data-open="bug:${esc(it.id)}">
+                      <div class="row-name">${esc(it.name)}</div>
+                      <div class="dot ${esc(dotCls(it.row.status))}"></div>
+                    </div>
+                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                </div>
+              </div>
+              <div class="col">
+                <div class="col-head">
+                  <div class="col-title">运营</div>
+                  <button class="add-btn" id="allAddOps" type="button">+ 添加</button>
+                </div>
+                <div class="list">
+                  ${sorted.filter(x=>x.kind==='ops').map(it=>`
+                    <div class="row-item ops" data-open="ops:${esc(it.id)}">
+                      <div class="row-name">${esc(it.name)}</div>
+                      <div class="dot ${esc(dotCls(it.row.status))}"></div>
+                    </div>
+                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        if($('allQ')){
+          $('allQ').addEventListener('input', ()=>{
+            app.allTasksFilter.q = $('allQ').value || '';
+            render();
+          });
+        }
+        if($('allSort')){
+          $('allSort').addEventListener('change', ()=>{
+            app.allTasksFilter.sort = $('allSort').value;
+            render();
+          });
+        }
+        if($('allShowDone')){
+          $('allShowDone').addEventListener('change', ()=>{
+            app.allTasksFilter.showDone = $('allShowDone').checked;
+            render();
+          });
+        }
+        el.querySelectorAll('[data-open]').forEach(x=>{
+          x.addEventListener('click', ()=>{
+            const [kind, id] = x.getAttribute('data-open').split(':');
+            openDrawerByKey(kind, id);
+          });
+        });
+        if($('allAddTask')) $('allAddTask').addEventListener('click', ()=> openCreateModal('task'));
+        if($('allAddBug')) $('allAddBug').addEventListener('click', ()=> openCreateModal('bug'));
+        if($('allAddOps')) $('allAddOps').addEventListener('click', ()=> openCreateModal('ops'));
       }
 
       function renderMilestones(el){
