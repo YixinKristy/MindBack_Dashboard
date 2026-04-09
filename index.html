@@ -524,39 +524,82 @@
       .kpi-stack{ grid-area: kpi; }
       .kpi-row{
         display:grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 12px;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
       }
       .kpi-card{
-        background: var(--surface);
-        border-radius: var(--radius-lg);
+        position: relative;
+        background: #1e1f26; /* surface_container */
+        border-radius: 24px; /* 1.5rem */
         padding: 24px;
         cursor:pointer;
-        transition: background .15s ease, transform .15s ease;
+        transition: transform .15s ease, outline-color .15s ease, background .15s ease;
+        outline: 1px solid rgba(195,198,215,0);
+        min-height: 156px;
       }
-      .kpi-card:hover{ background: var(--surface-raised); transform: translateY(-1px); }
-      .kpi-label{
+      .kpi-card::before{
+        content:'';
+        position:absolute;
+        left:0; right:0; top:0;
+        height:2px;
+        background: rgba(195,198,215,0.25);
+        border-top-left-radius: 24px;
+        border-top-right-radius: 24px;
+      }
+      .kpi-card:hover{
+        transform: translateY(-2px);
+        outline-color: rgba(195,198,215,0.15); /* outline_variant */
+      }
+      .kpi-card.strip-primary::before{ background:#628aff; } /* primary_container */
+      .kpi-card.strip-secondary::before{ background:#45dfa4; } /* secondary */
+      .kpi-card.strip-error::before{ background:#ff6b6b; } /* error */
+      .kpi-card.strip-secondary::before{ background:#45dfa4; }
+
+      .kpi-h{ font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color:#c3c6d7; font-weight: 900; }
+      .kpi-body-md{ font-size: 14px; font-weight: 600; letter-spacing: 0.03em; color:#e2e4f0; }
+      .kpi-headline{ font-family: var(--font-display); font-size: 24px; font-weight: 800; letter-spacing: 0.02em; }
+      .kpi-primary{ color:#b4c5ff; }
+      .kpi-secondary{ color:#45dfa4; }
+      .kpi-tertiary{ color:#f9bd22; }
+      .kpi-error{ color:#ff6b6b; }
+      .kpi-muted{ color:#c3c6d7; opacity: .7; }
+      .kpi-gap12{ height:12px; }
+      .kpi-row16{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .kpi-col{ display:flex; flex-direction:column; gap:6px; margin-top: 12px; }
+      .kpi-line{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+      .kpi-badge{
         font-size: 11px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
         font-weight: 900;
-        letter-spacing: 0.04em;
-        color: var(--text-secondary);
+        border-radius: 999px;
+        padding: 6px 10px;
+        line-height: 1;
+        flex-shrink: 0;
       }
-      .kpi-value{
-        font-family: var(--font-display);
-        font-size: 32px;
-        font-weight: 800;
-        letter-spacing: 0.04em;
-        margin-top: 10px;
+      .kpi-badge.dev{ color:#b4c5ff; background: rgba(180,197,255,0.15); }
+      .kpi-badge.submitted{ color:#f9bd22; background: rgba(249,189,34,0.15); }
+      .kpi-badge.released{ color:#45dfa4; background: rgba(69,223,164,0.15); }
+      .kpi-badge.none{ color: rgba(195,198,215,0.40); background: transparent; }
+      .kpi-risk-bg{ background: rgba(255,107,107,0.05) !important; }
+      .kpi-risk-list{ margin-top: 12px; display:flex; flex-direction:column; gap: 8px; }
+      .kpi-risk-item{
+        height: 44px;
+        display:flex;
+        align-items:center;
+        gap: 10px;
+        padding: 0 10px;
+        border-radius: 12px;
+        background: rgba(37,39,49,0.55);
+        cursor:pointer;
       }
-      .kpi-value.primary{ color: var(--primary); }
-      .kpi-value.warn{ color: var(--tertiary); }
-      .kpi-value.good{ color: var(--secondary); }
-      .kpi-value.bad{ color: var(--danger); }
-      .kpi-sub{
-        margin-top: 8px;
-        color: var(--text-secondary);
-        font-size: 12px;
-      }
+      .kpi-risk-item:hover{ background: rgba(37,39,49,0.85); }
+      .kpi-src{ font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 900; border-radius: 999px; padding: 6px 10px; line-height:1; }
+      .kpi-src.task{ color:#b4c5ff; background: rgba(180,197,255,0.15); }
+      .kpi-src.bug{ color:#ff6b6b; background: rgba(255,107,107,0.12); }
+      .kpi-src.ops{ color:#f9bd22; background: rgba(249,189,34,0.12); }
+      .kpi-risk-desc{ flex:1; min-width:0; font-size: 14px; color:#e2e4f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .kpi-risk-own{ font-size: 11px; color:#c3c6d7; letter-spacing: .03em; flex-shrink:0; }
 
       .phase-card{
         grid-area: milestones;
@@ -3465,6 +3508,48 @@
           x.addEventListener('click', (e)=> e.stopPropagation());
         });
 
+        // Top cards behaviors
+        el.querySelectorAll('[data-ovcard]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            const t = x.getAttribute('data-ovcard');
+            if(t === 'risk'){
+              app.overviewRiskOpen = !app.overviewRiskOpen;
+              render();
+              return;
+            }
+            if(t === 'ms'){
+              app.activeTab = 'milestones';
+              render();
+              if(keyMs?.id) openDrawerByKey('milestone', keyMs.id);
+              return;
+            }
+            if(t === 'release'){
+              app.activeTab = 'versions';
+              render();
+              return;
+            }
+          });
+        });
+        el.querySelectorAll('[data-ovver]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const vid = x.getAttribute('data-ovver');
+            if(!vid) return;
+            app.activeTab = 'versions';
+            render();
+            openDrawerByKey('version', vid);
+          });
+        });
+        el.querySelectorAll('[data-ovrisk]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const [k, id] = x.getAttribute('data-ovrisk').split(':');
+            app.activeTab = 'thisweek';
+            render();
+            openDrawerByKey(k, id);
+          });
+        });
+
         $('addTaskBtn').addEventListener('click', ()=> openCreateModal('task'));
         $('addBugBtn').addEventListener('click', ()=> openCreateModal('bug'));
         $('addOpsBtn').addEventListener('click', ()=> openCreateModal('ops'));
@@ -3488,36 +3573,74 @@
         const milestones = (app.board.milestones || []);
         const backlog = (app.board.backlog || []).filter(x=>x && !x.is_archived);
 
-        const doneThisWeek = tasks.filter(t=>t.this_week && t.status==='done').length;
-        const currentMs = milestones.filter(m=>m.status==='current').length;
-        const openBugs = bugs.filter(b=>b && b.status !== 'done').length;
-        const backlogRate = backlog.length ? Math.round((tasks.filter(t=>t.moved_from_backlog_id).length / Math.max(1, backlog.length)) * 100) : 0;
-
+        // ── Top cards (per spec) ──
         const phase = app.board.currentPhase;
         const phaseTitle = phase ? `${phase.name || ''}·${phase.theme || ''}`.replace(/\s*·\s*$/,'') : '第一阶段·稳功能基础';
         const phaseRange = phase?.month_range || '';
         const phaseDesc = phase?.description || '';
-        // 注意：总览不再展示“本月目标”（与阶段描述重复），保留数据但不显示
 
-        const pTotal = 30;
-        const pNow = Math.min(pTotal, 12);
-        const pct = Math.round((pNow/pTotal) * 100);
-
-        const versAll = (app.board.versions || [])
-          .filter(v=>v)
-          .slice()
-          .sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
-        const now = new Date();
-        const wStart = startOfWeekMonday(now);
-        const wEnd = endOfWeekSunday(now);
+        const daysUntil = (ymdStr)=>{
+          const d = parseYmdLocal(ymdStr);
+          if(!d) return null;
+          const now0 = new Date(); now0.setHours(0,0,0,0);
+          const t0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+          const diff = Math.round((t0.getTime() - now0.getTime()) / 86400000);
+          return diff;
+        };
+        const msInCurrentPhase = milestones
+          .filter(m=> String(m?.phase_id || '') === String(phase?.id || ''))
+          .slice();
+        const keyMs = msInCurrentPhase.find(m=>m && m.status==='current')
+          || msInCurrentPhase.find(m=>m && m.status!=='done')
+          || null;
+        const keyMsTitle = keyMs?.title || '暂无里程碑';
+        const keyMsDue = (keyMs?.date_full && String(keyMs.date_full).match(/^\d{4}-\d{2}-\d{2}$/)) ? keyMs.date_full : '';
+        const keyMsDays = keyMsDue ? daysUntil(keyMsDue) : null;
+        const keyMsCountdown = (keyMsDays === null) ? '' : `距截止 ${Math.max(0, keyMsDays)} 天`;
 
         const weekDateOfVersion = (v)=>{
-          // 以 week_start 为准（用户显式维护）；否则回退 target_date(YYYY-MM-DD)
           const d1 = parseYmdLocal(v?.week_start);
           if(d1) return d1;
           const d2 = parseYmdLocal(v?.target_date);
           return d2;
         };
+        const now = new Date();
+        const wStart = startOfWeekMonday(now);
+        const wEnd = endOfWeekSunday(now);
+        const isThisWeekVersion = (v)=>{
+          const d = weekDateOfVersion(v);
+          if(!d) return false;
+          return d.getTime() >= wStart.getTime() && d.getTime() <= wEnd.getTime();
+        };
+        const versAll = (app.board.versions || [])
+          .filter(v=>v)
+          .slice()
+          .sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+        const versThisWeek = versAll.filter(v=> isThisWeekVersion(v));
+        const pickPlatVer = (plat)=>{
+          const arr = versThisWeek.filter(v=>v.platform===plat).slice();
+          arr.sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+          return arr[0] || null;
+        };
+        const thisWeekByPlat = {
+          ios: pickPlatVer('ios'),
+          android: pickPlatVer('android'),
+          web: pickPlatVer('web'),
+        };
+
+        const riskTasks = tasks.filter(t=>t && t.this_week && t.status==='block');
+        const riskBugs = bugs.filter(b=>b && b.status==='block');
+        const riskOps = ops.filter(o=>o && o.status==='pause');
+        const riskCount = riskTasks.length + riskBugs.length + riskOps.length;
+        const riskSummary = `功能 ${riskTasks.length}条 · Bug ${riskBugs.length}条 · 运营 ${riskOps.length}条`;
+        const riskTone = riskCount===0 ? 'secondary' : (riskCount<=2 ? 'tertiary' : 'error');
+        const riskStrip = riskCount===0 ? 'strip-secondary' : 'strip-error';
+        const riskOpen = !!app.overviewRiskOpen;
+
+        // 进度条暂用现有占位（后续可改为 phase 内真实进度）
+        const pTotal = 30;
+        const pNow = Math.min(pTotal, 12);
+        const pct = Math.round((pNow/pTotal) * 100);
 
         const classify = (v)=>{
           const d = weekDateOfVersion(v);
@@ -3767,10 +3890,67 @@
           <div class="overview-wrap">
             <div class="kpi-stack">
               <div class="kpi-row">
-                ${kpiCard('本周完成任务数', String(doneThisWeek), 'good', '')}
-                ${kpiCard('进行中里程碑', String(currentMs), 'primary', '')}
-                ${kpiCard('未解决 Bug 数', String(openBugs), openBugs>0?'bad':'good', '')}
-                ${kpiCard('本月 Backlog 处理率', backlogRate + '%', 'warn', '')}
+                <div class="kpi-card strip-primary" data-ovcard="ms">
+                  <div class="kpi-h">当前阶段</div>
+                  <div class="kpi-body-md" style="margin-top:8px;">${esc(phaseTitle)}</div>
+                  <div class="kpi-gap12"></div>
+                  <div class="kpi-h">里程碑</div>
+                  <div class="kpi-headline kpi-primary" style="margin-top:6px;">${esc(keyMsTitle)}</div>
+                  ${keyMsCountdown ? `<div class="kpi-body-md kpi-tertiary" style="margin-top:6px;">${esc(keyMsCountdown)}</div>` : ``}
+                </div>
+
+                <div class="kpi-card strip-secondary" data-ovcard="release">
+                  <div class="kpi-h">本周预计发布版本</div>
+                  <div class="kpi-col">
+                    ${['ios','android','web'].map(p=>{
+                      const v = thisWeekByPlat[p];
+                      const pLab = p==='ios'?'IOS' : p==='android'?'ANDROID' : 'WEB';
+                      const num = v ? (v.version_num || '') : '本周无发布';
+                      const st = v ? (v.status || 'dev') : 'none';
+                      const badgeCls = st==='released'?'released' : st==='submitted'?'submitted' : st==='dev'?'dev' : st==='testing'?'dev' : 'none';
+                      const stLab = st==='released'?'已发布' : st==='submitted'?'提审中' : st==='dev'?'开发中' : st==='testing'?'开发中' : '本周无发布';
+                      return `
+                        <div class="kpi-line" data-ovver="${v ? esc(v.id) : ''}" data-ovplat="${p}">
+                          <div style="min-width:0;">
+                            <div class="kpi-h">${pLab}</div>
+                            <div class="kpi-body-md" style="margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(num)}</div>
+                          </div>
+                          <span class="kpi-badge ${badgeCls} ${st==='none'?'none':''}">${esc(stLab)}</span>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+
+                <div class="kpi-card ${riskStrip} ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk">
+                  <div class="kpi-h">当前风险预警</div>
+                  ${riskCount===0 ? `
+                    <div class="kpi-body-md kpi-secondary" style="margin-top:14px;">暂无风险</div>
+                  ` : `
+                    <div class="kpi-headline ${riskTone==='secondary'?'kpi-secondary':riskTone==='tertiary'?'kpi-tertiary':'kpi-error'}" style="margin-top:10px;">${riskCount}</div>
+                    <div class="kpi-h" style="margin-top:6px;letter-spacing:0.03em;text-transform:none;opacity:.95;">${esc(riskSummary)}</div>
+                  `}
+                  ${riskCount>0 && riskOpen ? `
+                    <div class="kpi-risk-list">
+                      ${[
+                        ...riskTasks.map(r=>({ kind:'task', row:r })),
+                        ...riskBugs.map(r=>({ kind:'bug', row:r })),
+                        ...riskOps.map(r=>({ kind:'ops', row:r })),
+                      ].slice(0,6).map(it=>{
+                        const srcCls = it.kind==='task'?'task':it.kind==='bug'?'bug':'ops';
+                        const srcLab = it.kind==='task'?'功能':it.kind==='bug'?'BUG':'运营';
+                        const own = formatOwnersDisplay(it.row);
+                        return `
+                          <div class="kpi-risk-item" data-ovrisk="${esc(it.kind)}:${esc(it.row.id)}">
+                            <span class="kpi-src ${srcCls}">${esc(srcLab)}</span>
+                            <div class="kpi-risk-desc">${esc(it.row.name || it.row.title || '未命名')}</div>
+                            <div class="kpi-risk-own">${esc(own)}</div>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  ` : ``}
+                </div>
               </div>
             </div>
 
