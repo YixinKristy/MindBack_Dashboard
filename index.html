@@ -1353,22 +1353,24 @@
       </div>
     </div>
 
-    <!-- Date / range picker (for ops target_date) -->
+    <!-- Date / range picker (for ops target_date / phase range) -->
     <div class="modal" id="datePickerModal" aria-hidden="true">
       <div class="modal-card" role="dialog" aria-modal="true" aria-label="选择日期">
         <div class="modal-title">选择目标日期</div>
-        <div style="display:flex;gap:8px;margin-top:6px;">
-          <button class="btn ghost" id="dpModeSingle" type="button">单日</button>
-          <button class="btn ghost" id="dpModeRange" type="button">范围</button>
-        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
           <div class="field" style="margin:0;">
             <div class="label">开始</div>
-            <input class="input" id="dpStart" type="date" />
+            <div style="position:relative;">
+              <input class="input" id="dpStart" type="date" />
+              <button class="btn ghost" id="dpStartBtn" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 8px;opacity:.9;">📅</button>
+            </div>
           </div>
           <div class="field" style="margin:0;">
-            <div class="label">结束</div>
-            <input class="input" id="dpEnd" type="date" />
+            <div class="label">起止</div>
+            <div style="position:relative;">
+              <input class="input" id="dpEnd" type="date" placeholder="不填则为单日" />
+              <button class="btn ghost" id="dpEndBtn" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 8px;opacity:.9;">📅</button>
+            </div>
           </div>
         </div>
         <div class="modal-actions">
@@ -1401,7 +1403,7 @@
         pendingCreateDefaults: null,
         pendingVersionPick: null, // { elId, platform }
         sidebarCollapsed: false,
-        datePicker: { open:false, targetId:null, mode:'single' },
+        datePicker: { open:false, targetId:null },
       };
 
       const TABS = [
@@ -2366,8 +2368,6 @@
           if(r){
             r.addEventListener('click', ()=>{
               openDateOrRangePicker('f_phase_range');
-              // 默认用范围模式
-              setTimeout(()=> setDatePickerMode('range'), 0);
             });
           }
         }
@@ -2991,29 +2991,18 @@
       // --- Date / range picker (store 'YYYY-MM-DD' or 'YYYY-MM-DD~YYYY-MM-DD') ---
       function parseDateOrRange(raw){
         const s = String(raw||'').trim();
-        if(!s) return { mode:'single', start:'', end:'' };
+        if(!s) return { start:'', end:'' };
         if(s.includes('~')){
           const [a,b] = s.split('~').map(x=>x.trim());
-          return { mode:'range', start:a||'', end:b||'' };
+          return { start:a||'', end:b||'' };
         }
-        return { mode:'single', start:s, end:'' };
-      }
-      function setDatePickerMode(mode){
-        app.datePicker.mode = (mode === 'range') ? 'range' : 'single';
-        const isRange = app.datePicker.mode === 'range';
-        if($('dpModeSingle')) $('dpModeSingle').classList.toggle('primary', !isRange);
-        if($('dpModeRange')) $('dpModeRange').classList.toggle('primary', isRange);
-        if($('dpEnd')){
-          $('dpEnd').disabled = !isRange;
-          $('dpEnd').style.opacity = isRange ? '1' : '.6';
-        }
+        return { start:s, end:'' };
       }
       function openDateOrRangePicker(targetId){
         app.datePicker.open = true;
         app.datePicker.targetId = targetId;
         const cur = ($(targetId)?.value || '').trim();
         const parsed = parseDateOrRange(cur);
-        setDatePickerMode(parsed.mode);
         if($('dpStart')) $('dpStart').value = parsed.start || '';
         if($('dpEnd')) $('dpEnd').value = parsed.end || '';
         $('datePickerModal').classList.add('open');
@@ -4312,8 +4301,10 @@
       });
 
       $('dpCancel').addEventListener('click', closeDateOrRangePicker);
-      $('dpModeSingle').addEventListener('click', ()=> setDatePickerMode('single'));
-      $('dpModeRange').addEventListener('click', ()=> setDatePickerMode('range'));
+      // 让日历入口更明显：点击按钮直接弹出系统 date picker（支持的浏览器）
+      const tryShowPicker = (el)=>{ try{ el && el.showPicker && el.showPicker(); }catch(_e){} };
+      $('dpStartBtn').addEventListener('click', ()=>{ const el=$('dpStart'); if(el){ el.focus(); tryShowPicker(el); } });
+      $('dpEndBtn').addEventListener('click', ()=>{ const el=$('dpEnd'); if(el){ el.focus(); tryShowPicker(el); } });
       $('dpClear').addEventListener('click', ()=>{
         const id = app.datePicker.targetId;
         if(id){
@@ -4329,15 +4320,9 @@
         if(!el){ closeDateOrRangePicker(); return; }
         const s = ($('dpStart') && $('dpStart').value) ? $('dpStart').value.trim() : '';
         const e = ($('dpEnd') && $('dpEnd').value) ? $('dpEnd').value.trim() : '';
-        if(app.datePicker.mode === 'range'){
-          if(s && e){
-            el.value = `${s}~${e}`;
-          }else{
-            el.value = s || e || '';
-          }
-        }else{
-          el.value = s || '';
-        }
+        // 规则：只填开始=单日；开始+起止=范围
+        if(s && e) el.value = `${s}~${e}`;
+        else el.value = s || '';
         closeDateOrRangePicker();
       });
 
