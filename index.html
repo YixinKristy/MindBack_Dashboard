@@ -61,11 +61,23 @@
         overflow:hidden;
       }
       .sidebar.collapsed{
-        width: 0;
-        padding: 18px 0;
-        opacity: 0.0;
-        pointer-events:none;
+        width: 56px;
+        padding: 18px 10px;
+        opacity: 1;
+        pointer-events:auto;
       }
+      .sidebar.collapsed .brand{
+        padding: 10px 8px;
+        justify-content:center;
+      }
+      .sidebar.collapsed .brand-dot{ width: 22px; height:22px; }
+      .sidebar.collapsed .brand-name{ display:none; }
+      .sidebar.collapsed .sidebar-toggle{ right: 6px; top: 6px; width: 28px; height: 28px; }
+      .sidebar.collapsed .nav-item{ justify-content:center; gap: 0; padding: 10px 8px; }
+      .sidebar.collapsed .nav-label{ display:none; }
+      .sidebar.collapsed .nav-count{ display:none; }
+      .sidebar.collapsed .nav-ico{ width: 22px; }
+      .sidebar.collapsed .sidebar-bottom{ display:none; }
       .brand{
         display:flex;
         align-items:center;
