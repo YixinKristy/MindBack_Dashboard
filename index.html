@@ -3210,15 +3210,16 @@
 
         // 总览最多展示 3 个版本；未来版本若无内容则不展示
         const pickTop3 = ()=>{
-          const pickFrom = (arr)=> arr.filter(v=>v && hasAnyContent(v.id));
-          const past = pickFrom(groups.past).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
-          const week = pickFrom(groups.thisweek).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
-          const future = pickFrom(groups.future).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
-          const other = pickFrom(groups.other).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+          const pickFromContent = (arr)=> arr.filter(v=>v && hasAnyContent(v.id));
+          // 本周版本永远展示（即使暂时没有“已结项功能”）
+          const week = (groups.thisweek || []).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+          const past = pickFromContent(groups.past).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+          const future = pickFromContent(groups.future).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+          const other = pickFromContent(groups.other).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
           const chosen = [];
           const pushN = (list)=>{ for(const v of list){ if(chosen.length>=3) break; if(!chosen.some(x=>x.id===v.id)) chosen.push(v); } };
-          pushN(past);
           pushN(week);
+          pushN(past);
           pushN(future);
           pushN(other);
           const set = new Set(chosen.map(v=>v.id));
