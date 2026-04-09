@@ -585,6 +585,30 @@
         letter-spacing: 0.04em;
         font-size: 16px;
       }
+      .month-goal{
+        margin-top: 12px;
+        background: rgba(98,138,255,0.10);
+        border-radius: var(--radius-md);
+        padding: 12px 12px;
+        cursor:pointer;
+        transition: background .15s ease, transform .15s ease;
+      }
+      .month-goal:hover{ background: rgba(98,138,255,0.14); transform: translateY(-1px); }
+      .month-goal-kicker{
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.05em;
+      }
+      .month-goal-text{
+        margin-top: 6px;
+        color: var(--text-primary);
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        line-height: 1.35;
+        white-space: pre-wrap;
+      }
       .phase-sub{
         margin-top: 8px;
         color: var(--text-secondary);
@@ -2457,6 +2481,20 @@
 
       function buildCreateFormHTML(kind, defaults = null){
         const d = defaults && typeof defaults === 'object' ? defaults : {};
+        if(kind === 'month_goal'){
+          const mk = d.month_key || '';
+          const mg = d.month_goal || '';
+          return `
+            <div class="field">
+              <div class="label">月份</div>
+              <input class="input" value="${esc(mk)}" disabled />
+            </div>
+            <div class="field">
+              <div class="label">月目标</div>
+              <textarea class="textarea" id="c_month_goal" placeholder="例如：稳定基础功能；完成 1.2.6 发版；降低崩溃率…">${esc(mg)}</textarea>
+            </div>
+          `;
+        }
         if(kind === 'version'){
           const plat = d.platform || app.versionsPlatform || 'ios';
           const vnum = d.version_num || '';
@@ -2706,7 +2744,7 @@
           toast('bad', '数据未加载');
           return;
         }
-        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本' };
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本', month_goal:'编辑月目标' };
         app.pendingCreateKind = kind;
         app.pendingCreateDefaults = null;
         $('createModalTitle').textContent = titles[kind] || '新建';
@@ -2721,7 +2759,7 @@
           toast('bad', '数据未加载');
           return;
         }
-        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本' };
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本', month_goal:'编辑月目标' };
         app.pendingCreateKind = kind;
         app.pendingCreateDefaults = defaults && typeof defaults === 'object' ? defaults : null;
         $('createModalTitle').textContent = titles[kind] || '新建';
@@ -2829,6 +2867,31 @@
         const kind = app.pendingCreateKind;
         if(!kind || !app.board) return;
         try{
+          if(kind === 'month_goal'){
+            const ov = app.pendingCreateDefaults || null;
+            const id = Number(ov?.id);
+            if(!Number.isFinite(id)){ toast('bad','缺少 board_overview.id'); return; }
+            const val = ($('c_month_goal') && $('c_month_goal').value) || '';
+            // optimistic
+            if(app.board.overview && Number(app.board.overview.id) === id){
+              app.board.overview = { ...app.board.overview, month_goal: val, month_goal_updated_at: new Date().toISOString() };
+            }
+            closeCreateModal();
+            render();
+            saveLocalDraft();
+            try{
+              await patchById('board_overview', 'id', id, { month_goal: val, month_goal_updated_at: new Date().toISOString() });
+              toast('ok','已更新月目标');
+              saveLocalDraft();
+              await refreshRemote();
+            }catch(e){
+              console.warn(e);
+              enqueue({ op:'patch', table:'board_overview', idField:'id', idValue:id, patch:{ month_goal: val, month_goal_updated_at: new Date().toISOString() } });
+              saveLocalDraft();
+              toast('warn','已在前端更新月目标，待同步后端');
+            }
+            return;
+          }
           if(kind === 'version'){
             const platform = ($('c_platform') && $('c_platform').value) || (app.versionsPlatform || 'ios');
             const version_num = ($('c_version_num') && $('c_version_num').value.trim()) || '';
@@ -3258,6 +3321,9 @@
         const phaseTitle = phase ? `${phase.name || ''}·${phase.theme || ''}`.replace(/\s*·\s*$/,'') : '第一阶段·稳功能基础';
         const phaseRange = phase?.month_range || '';
         const phaseDesc = phase?.description || '';
+        const ov = app.board?.overview || null;
+        const monthGoal = (ov?.month_goal || '').trim();
+        const monthKey = ov?.month_key || '';
 
         const pTotal = 30;
         const pNow = Math.min(pTotal, 12);
@@ -3590,6 +3656,10 @@
               <div class="phase-head">
                 <div>
                   <div class="phase-title">${esc(phaseTitle)}</div>
+                  <div class="month-goal" id="monthGoalCard" title="点击编辑月目标">
+                    <div class="month-goal-kicker">${esc(monthKey ? (monthKey + ' 月目标') : '本月目标')}</div>
+                    <div class="month-goal-text">${esc(monthGoal || '点击填写本月目标…')}</div>
+                  </div>
                   <div class="phase-sub" style="margin-top:10px;">${esc(phaseDesc)}</div>
                 </div>
                 <div class="phase-range">${esc(phaseRange)}</div>
@@ -3621,6 +3691,15 @@
             openDrawerByKey(kind, id);
           });
         });
+        if($('monthGoalCard')){
+          $('monthGoalCard').addEventListener('click', ()=>{
+            if(!ov?.id){
+              toast('warn','未找到本月总览记录（board_overview）');
+              return;
+            }
+            openCreateModalWithDefaults('month_goal', { id: ov.id, month_key: ov.month_key, month_goal: ov.month_goal || '' });
+          });
+        }
         el.querySelectorAll('[data-vertogglebtn]').forEach(x=>{
           x.addEventListener('click', (e)=>{
             e.stopPropagation();
