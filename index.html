@@ -612,6 +612,7 @@
         cursor:pointer;
         user-select:none;
         padding: 2px 2px 10px 2px;
+        flex-wrap: wrap;
       }
       .ver-group-title{
         font-family: var(--font-display);
@@ -619,11 +620,18 @@
         letter-spacing: 0.04em;
         font-size: 12px;
         color: var(--text-secondary);
+        line-height: 1.25;
+        white-space: normal;
+        flex: 1 1 auto;
+        min-width: 0;
       }
       .ver-group-meta{
         color: var(--text-secondary);
         font-size: 12px;
         font-weight: 750;
+        line-height: 1.25;
+        white-space: normal;
+        flex: 0 1 auto;
       }
       .ver-related{
         margin-top: 10px;
@@ -2919,7 +2927,7 @@
               ? { version_android_id: v.id, this_week: false, module:'功能开发' }
               : { version_web_id: v.id, this_week: false, module:'功能开发' };
           return `
-            <div class="ver-mini" data-vertoggle="${esc(v.id)}">
+            <div class="ver-mini" data-vid="${esc(v.id)}">
               <div class="ver-top" style="align-items:flex-start;">
                 <div style="min-width:0;">
                   <div class="ver-num" data-open="version:${esc(v.id)}">${esc(v.version_num || '')}</div>
@@ -2928,7 +2936,7 @@
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
                   <span class="badge ${vb.cls}" data-toggle="version:${esc(v.id)}">${esc(vb.label)}</span>
-                  <button class="btn ghost" type="button" data-vertoggle="${esc(v.id)}" style="padding:6px 10px;">${expanded?'收起':'展开'}</button>
+                  <button class="btn ghost" type="button" data-vertogglebtn="${esc(v.id)}" style="padding:6px 10px;">${expanded?'收起':'展开'}</button>
                   <button class="btn" type="button" data-addtask="${esc(v.id)}" style="padding:6px 10px;">+ 新增功能</button>
                 </div>
               </div>
@@ -2978,7 +2986,7 @@
               <div class="ver-group">
                 <div class="ver-group-head" data-vgroup="thisweek">
                   <div class="ver-group-title">${esc(weekRangeStr)}</div>
-                  <div class="ver-group-meta">点击版本展开关联内容</div>
+                  <div class="ver-group-meta"></div>
                 </div>
                 ${(groups.thisweek||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">本周暂无可解析目标日期的版本</div>`}
               </div>
@@ -3022,10 +3030,10 @@
             openDrawerByKey(kind, id);
           });
         });
-        el.querySelectorAll('[data-vertoggle]').forEach(x=>{
+        el.querySelectorAll('[data-vertogglebtn]').forEach(x=>{
           x.addEventListener('click', (e)=>{
             e.stopPropagation();
-            const vid = x.getAttribute('data-vertoggle');
+            const vid = x.getAttribute('data-vertogglebtn');
             if(!vid) return;
             const id = Number(vid);
             app.overviewVersionExpanded[id] = !app.overviewVersionExpanded[id];
