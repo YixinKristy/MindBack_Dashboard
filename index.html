@@ -1995,6 +1995,13 @@
 
           ${kind==='version' ? `
             <div class="field">
+              <div class="label">所属周（周一）</div>
+              <input class="input" id="f_week_start" value="${esc(row.week_start || '')}" placeholder="例如：2026-04-06" />
+            </div>
+          ` : ''}
+
+          ${kind==='version' ? `
+            <div class="field">
               <div class="label">内部备注</div>
               <textarea class="textarea" id="f_version_notes" placeholder="团队内部可见的备注">${esc(versionInternalNotes)}</textarea>
             </div>
@@ -2135,6 +2142,7 @@
         const milestoneVal = kind === 'task' && $('f_milestone') ? String($('f_milestone').value || '').trim() : null;
         const isArchivedVal = kind === 'task' && $('f_archived') ? ($('f_archived').value === 'true') : null;
         const platformVal = kind === 'version' && $('f_platform') ? $('f_platform').value : null;
+        const weekStartVal = kind === 'version' && $('f_week_start') ? $('f_week_start').value.trim() : null;
         const versionInternalSave = kind === 'version' && $('f_version_notes') ? $('f_version_notes').value : '';
 
         const before = structuredClone(findRow(kind, row.id));
@@ -2147,6 +2155,7 @@
               version_num: name,
               status,
               target_date: due || '',
+              week_start: weekStartVal || null,
               release_notes: note,
               notes: versionInternalSave,
               platform: platformVal || row.platform,
@@ -2196,6 +2205,7 @@
             patch.version_num = name;
             patch.status = status;
             patch.target_date = due || '';
+            patch.week_start = weekStartVal || null;
             patch.release_notes = note;
             patch.notes = versionInternalSave;
             if(platformVal) patch.platform = platformVal;
@@ -2325,6 +2335,7 @@
           const plat = d.platform || app.versionsPlatform || 'ios';
           const vnum = d.version_num || '';
           const tdate = d.target_date || '';
+          const wstart = d.week_start || '';
           return `
             <div class="field">
               <div class="label">平台</div>
@@ -2341,6 +2352,10 @@
             <div class="field">
               <div class="label">目标日期</div>
               <input class="input" id="c_target_date" value="${esc(tdate)}" placeholder="例如：2026-04-12" />
+            </div>
+            <div class="field">
+              <div class="label">所属周（周一）</div>
+              <input class="input" id="c_week_start" value="${esc(wstart)}" placeholder="例如：2026-04-06" />
             </div>
             <div class="field">
               <div class="label">状态</div>
@@ -2629,6 +2644,7 @@
               platform,
               version_num,
               target_date: ($('c_target_date') && $('c_target_date').value.trim()) || '',
+              week_start: ($('c_week_start') && $('c_week_start').value.trim()) || null,
               status: ($('c_status') && $('c_status').value) || 'dev',
               release_notes: ($('c_release_notes') && $('c_release_notes').value) || '',
               notes: '',
@@ -3056,15 +3072,23 @@
         const pct = Math.round((pNow/pTotal) * 100);
 
         const versAll = (app.board.versions || [])
-          .filter(v=>v && v.platform === 'ios')
+          .filter(v=>v)
           .slice()
           .sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
         const now = new Date();
         const wStart = startOfWeekMonday(now);
         const wEnd = endOfWeekSunday(now);
 
+        const weekDateOfVersion = (v)=>{
+          // 以 week_start 为准（用户显式维护）；否则回退 target_date(YYYY-MM-DD)
+          const d1 = parseYmdLocal(v?.week_start);
+          if(d1) return d1;
+          const d2 = parseYmdLocal(v?.target_date);
+          return d2;
+        };
+
         const classify = (v)=>{
-          const d = parseYmdLocal(v?.target_date);
+          const d = weekDateOfVersion(v);
           if(d){
             if(isInSameWeekMondayToSunday(d, now)) return 'thisweek';
             if(d.getTime() < wStart.getTime()) return 'past';
@@ -3247,7 +3271,7 @@
         // 总览固定展示近三周：上周 / 本周 / 下周（各周取“最新的一个版本”；若缺失则降级补位）
         const pickTop3 = ()=>{
           const weekStartOf = (v)=>{
-            const d = parseYmdLocal(v?.target_date);
+            const d = weekDateOfVersion(v);
             if(!d) return null;
             return startOfWeekMonday(d).getTime();
           };
@@ -3279,11 +3303,11 @@
           if(chosen.length < 3){
             const rest = versAll
               .filter(v=>v && !chosen.some(x=>x.id===v.id))
-              .filter(v=>parseYmdLocal(v?.target_date))
+              .filter(v=>weekDateOfVersion(v))
               .slice()
               .sort((a,b)=>{
-                const da = parseYmdLocal(a.target_date).getTime();
-                const db = parseYmdLocal(b.target_date).getTime();
+                const da = weekDateOfVersion(a).getTime();
+                const db = weekDateOfVersion(b).getTime();
                 return da - db;
               });
             for(const v of rest){
