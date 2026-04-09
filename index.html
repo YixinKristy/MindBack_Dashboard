@@ -298,7 +298,27 @@
         font-weight: 800;
         padding: 2px 7px;
         letter-spacing: 0.05em;
+        flex-shrink: 0;
       }
+      .focus-top-right{
+        display:flex;
+        flex-wrap:wrap;
+        gap: 4px;
+        justify-content:flex-end;
+        align-items:center;
+        max-width: 68%;
+      }
+      .plat-tag{
+        flex-shrink:0;
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        padding: 2px 6px;
+        border-radius: 999px;
+      }
+      .plat-tag.ios{ background: rgba(180,197,255,0.18); color: var(--primary); }
+      .plat-tag.android{ background: rgba(69,223,164,0.15); color: var(--secondary); }
+      .plat-tag.web{ background: rgba(249,189,34,0.15); color: var(--tertiary); }
       .focus-name{
         font-family: var(--font-display);
         font-size: 14px;
@@ -903,6 +923,15 @@
         border-radius: var(--radius-lg);
         padding: 18px;
       }
+      .modal-card--wide{
+        width: 640px;
+      }
+      .create-modal-body{
+        max-height: min(70vh, 520px);
+        overflow-y: auto;
+        padding-right: 6px;
+        margin-top: 4px;
+      }
       .modal-title{
         font-family: var(--font-display);
         font-weight: 800;
@@ -1008,6 +1037,18 @@
       </div>
     </div>
 
+    <!-- 新建项（确认后才写入列表） -->
+    <div class="modal" id="createModal" aria-hidden="true">
+      <div class="modal-card modal-card--wide" role="dialog" aria-modal="true" aria-label="新建">
+        <div class="modal-title" id="createModalTitle">新建</div>
+        <div class="create-modal-body" id="createModalBody"></div>
+        <div class="modal-actions">
+          <button class="btn ghost" id="createCancel" type="button">取消</button>
+          <button class="btn primary" id="createSubmit" type="button">确认添加</button>
+        </div>
+      </div>
+    </div>
+
     <div class="toast" id="toast"></div>
 
     <script>
@@ -1026,6 +1067,7 @@
         drawer: { open:false, kind:null, row:null },
         localOnly: false, // 写回后端（失败则进入待同步队列，前端仍保持变更）
         syncQueue: [],    // { op:'patch'|'insert'|'delete', table, idField, idValue, patch|row, tempId? }
+        pendingCreateKind: null,
       };
 
       const TABS = [
@@ -1213,15 +1255,94 @@
         return s || '—';
       }
 
+      function milestoneOptions(currentId){
+        const ms = app.board?.milestones || [];
+        let html = `<option value="">（未关联里程碑）</option>`;
+        for(const m of ms){
+          if(!m) continue;
+          const sel = String(m.id) === String(currentId || '') ? ' selected' : '';
+          html += `<option value="${esc(m.id)}"${sel}>${esc(m.title || m.id)}</option>`;
+        }
+        return html;
+      }
+
+      function versionSelectOptions(platform, selectedId){
+        const vers = (app.board?.versions || [])
+          .filter(v=>v && v.platform === platform)
+          .slice()
+          .sort((a,b)=>(Number(a.sort_order)||0) - (Number(b.sort_order)||0));
+        let html = `<option value="">（不关联）</option>`;
+        for(const v of vers){
+          const sel = selectedId != null && selectedId !== '' && Number(selectedId) === Number(v.id) ? ' selected' : '';
+          const lab = (v.version_num || '').trim() || ('#' + v.id);
+          html += `<option value="${v.id}"${sel}>${esc(lab)}</option>`;
+        }
+        return html;
+      }
+
+      function readVersionSelect(elId){
+        const el = $(elId);
+        if(!el) return null;
+        const raw = String(el.value || '').trim();
+        if(raw === '') return null;
+        const n = Number(raw);
+        return Number.isFinite(n) ? n : null;
+      }
+
+      function taskVersionBundleFromSelects(iosEl, androidEl, webEl){
+        const vi = readVersionSelect(iosEl);
+        const va = readVersionSelect(androidEl);
+        const vw = readVersionSelect(webEl);
+        const plats = [];
+        if(vi) plats.push('ios');
+        if(va) plats.push('android');
+        if(vw) plats.push('web');
+        const vPri = vi ?? va ?? vw ?? null;
+        return { version_ios_id: vi, version_android_id: va, version_web_id: vw, platforms: plats, version_id: vPri };
+      }
+
+      function taskRowPlatformsOrdered(kind, row){
+        if(!row) return [];
+        if(kind === 'task'){
+          const from = [];
+          if(row.version_ios_id) from.push('ios');
+          if(row.version_android_id) from.push('android');
+          if(row.version_web_id) from.push('web');
+          if(from.length) return from;
+          if(row.version_id != null && row.version_id !== ''){
+            const v = (app.board?.versions || []).find(x=>x && Number(x.id) === Number(row.version_id));
+            if(v && v.platform) return [v.platform];
+          }
+        }
+        const pl = Array.isArray(row.platforms) ? row.platforms : [];
+        const order = ['ios','android','web'];
+        return order.filter(p=>pl.includes(p));
+      }
+
+      function platformTagsHtmlForFocus(kind, row){
+        const tags = taskRowPlatformsOrdered(kind, row);
+        return tags.map(p=>{
+          const lab = p === 'ios' ? 'iOS' : p === 'android' ? '安卓' : 'Web';
+          return `<span class="plat-tag ${p}">${esc(lab)}</span>`;
+        }).join('');
+      }
+
       function formatVersionForFocus(kind, row){
         if(kind !== 'task' || row == null) return '—';
-        const vid = row.version_id;
-        if(vid == null || vid === '') return '—';
-        const v = (app.board?.versions || []).find(x=>x && Number(x.id) === Number(vid));
-        if(!v) return '—';
-        const plat = v.platform==='ios' ? 'iOS' : v.platform==='android' ? 'Android' : 'Web';
-        const num = (v.version_num || '').trim();
-        return num ? `${plat} ${num}` : plat;
+        const parts = [];
+        const pushVid = (vid)=>{
+          if(vid == null || vid === '') return;
+          const v = (app.board?.versions || []).find(x=>x && Number(x.id) === Number(vid));
+          if(!v) return;
+          const plat = v.platform === 'ios' ? 'iOS' : v.platform === 'android' ? '安卓' : 'Web';
+          const num = (v.version_num || '').trim();
+          parts.push(num ? `${plat} ${num}` : plat);
+        };
+        pushVid(row.version_ios_id);
+        pushVid(row.version_android_id);
+        pushVid(row.version_web_id);
+        if(parts.length === 0) pushVid(row.version_id);
+        return parts.length ? parts.join(' · ') : '—';
       }
 
       function priRank(p){ return p==='p0'?0 : p==='p1'?1 : p==='p2'?2 : 3; }
@@ -1495,25 +1616,48 @@
         const body = $('drawerBody');
         const foot = $('drawerFoot');
 
-        const nameValue = kind==='milestone' ? (row.title || '') : (row.name || '');
+        const nameValue = kind==='milestone' ? (row.title || '')
+          : kind==='version' ? (row.version_num || '')
+          : (row.name || '');
         const statusValue = kind==='milestone' ? msStatusToTaskStatus(row.status) : (kind==='version' ? (row.status || 'dev') : (row.status || 'ns'));
         const priorityValue = row.priority || 'p2';
-        const dueValue = kind==='task' ? (row.due_date || '') : kind==='bug' ? (row.due_date || '') : kind==='ops' ? (row.target_date || '') : '';
-        const noteValue = kind==='version' ? (row.release_notes || row.notes || '') : (row.note || '');
+        const dueValue = kind==='task' ? (row.due_date || '')
+          : kind==='bug' ? (row.due_date || '')
+          : kind==='ops' ? (row.target_date || '')
+          : kind==='version' ? (row.target_date || '')
+          : '';
+        const noteValue = kind==='version' ? (row.release_notes || '') : (row.note || '');
+        const versionInternalNotes = kind==='version' ? (row.notes || '') : '';
         const moduleValue = row.module || '';
         const ownersValue = Array.isArray(row.owners) ? row.owners.join(',') : '';
+        const dueLabel = kind==='ops' || kind==='version' ? '目标日期' : '截止日期';
 
         body.innerHTML = `
           <div class="field">
-            <div class="label">名称</div>
+            <div class="label">${kind==='version' ? '版本号' : kind==='milestone' ? '标题' : '名称'}</div>
             <input class="input" id="f_name" value="${esc(nameValue)}" />
           </div>
+          ${kind==='version' && row.slug ? `
+            <div class="field" style="opacity:.85;font-size:12px;color:var(--text-secondary);">
+              <span class="label">Slug（只读）</span>
+              <div>${esc(row.slug)}</div>
+            </div>
+          ` : ''}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
             <div class="field">
               <div class="label">状态</div>
               <select class="select" id="f_status">${statusOptions(kind, statusValue)}</select>
             </div>
-            ${(kind==='task' || kind==='backlog') ? `
+            ${kind==='version' ? `
+              <div class="field">
+                <div class="label">平台</div>
+                <select class="select" id="f_platform">
+                  <option value="ios" ${row.platform==='ios'?'selected':''}>iOS</option>
+                  <option value="android" ${row.platform==='android'?'selected':''}>Android</option>
+                  <option value="web" ${row.platform==='web'?'selected':''}>Web</option>
+                </select>
+              </div>
+            ` : (kind==='task' || kind==='backlog') ? `
               <div class="field">
                 <div class="label">优先级</div>
                 <select class="select" id="f_priority">
@@ -1523,10 +1667,17 @@
             ` : `<div></div>`}
           </div>
 
-          ${(kind==='task' || kind==='bug' || kind==='ops') ? `
+          ${(kind==='task' || kind==='bug' || kind==='ops' || kind==='version') ? `
             <div class="field">
-              <div class="label">截止日期</div>
-              <input class="input" id="f_due" value="${esc(dueValue)}" placeholder="例如：2026-04-27 或 本周" />
+              <div class="label">${dueLabel}</div>
+              <input class="input" id="f_due" value="${esc(dueValue)}" placeholder="${kind==='version' ? '例如：2026-04-27' : '例如：2026-04-27 或 本周'}" />
+            </div>
+          ` : ''}
+
+          ${kind==='version' ? `
+            <div class="field">
+              <div class="label">内部备注</div>
+              <textarea class="textarea" id="f_version_notes" placeholder="团队内部可见的备注">${esc(versionInternalNotes)}</textarea>
             </div>
           ` : ''}
 
@@ -1539,8 +1690,56 @@
 
           ${kind==='task' ? `
             <div class="field">
+              <div class="label">关联版本 · iOS</div>
+              <select class="select" id="f_v_ios">${versionSelectOptions('ios', row.version_ios_id)}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · 安卓</div>
+              <select class="select" id="f_v_android">${versionSelectOptions('android', row.version_android_id)}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · Web</div>
+              <select class="select" id="f_v_web">${versionSelectOptions('web', row.version_web_id)}</select>
+            </div>
+            <div class="field">
               <div class="label">负责人</div>
               <input class="input" id="f_owners" value="${esc(ownersValue)}" placeholder="例如：择良, 黄镇威（逗号分隔）" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <div class="label">列入本周跟进</div>
+                <select class="select" id="f_this_week">
+                  <option value="true" ${row.this_week ? 'selected' : ''}>是</option>
+                  <option value="false" ${row.this_week ? '' : 'selected'}>否</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="label">任务类型</div>
+                <select class="select" id="f_task_type">
+                  ${['task','bug','fix'].map(t=>`<option value="${t}" ${(row.task_type||'task')===t?'selected':''}>${t==='task'?'功能':t==='bug'?'Bug':'修复'}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <div class="label">来源</div>
+                <select class="select" id="f_source">
+                  <option value="internal" ${(row.source||'internal')==='internal'?'selected':''}>内部</option>
+                  <option value="user" ${row.source==='user'?'selected':''}>用户</option>
+                  <option value="campaign" ${row.source==='campaign'?'selected':''}>活动</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="label">里程碑</div>
+                <select class="select" id="f_milestone">${milestoneOptions(row.milestone_id)}</select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="label">归档</div>
+              <select class="select" id="f_archived">
+                <option value="false" ${row.is_archived ? '' : 'selected'}>否</option>
+                <option value="true" ${row.is_archived ? 'selected' : ''}>是</option>
+              </select>
             </div>
           ` : ''}
 
@@ -1555,8 +1754,8 @@
           ` : ''}
 
           <div class="field">
-            <div class="label">备注</div>
-            <textarea class="textarea" id="f_note" placeholder="点击添加备注…">${esc(noteValue)}</textarea>
+            <div class="label">${kind==='version' ? '发布说明（Release notes）' : '备注'}</div>
+            <textarea class="textarea" id="f_note" placeholder="${kind==='version' ? '对外/发布说明…' : '点击添加备注…'}">${esc(noteValue)}</textarea>
           </div>
         `;
 
@@ -1592,6 +1791,14 @@
             .map(s=>s.trim())
             .filter(Boolean)
           : null;
+        const taskVers = kind === 'task' ? taskVersionBundleFromSelects('f_v_ios', 'f_v_android', 'f_v_web') : null;
+        const thisWeekTask = kind === 'task' && $('f_this_week') ? ($('f_this_week').value === 'true') : null;
+        const taskTypeVal = kind === 'task' && $('f_task_type') ? $('f_task_type').value : null;
+        const sourceVal = kind === 'task' && $('f_source') ? $('f_source').value : null;
+        const milestoneVal = kind === 'task' && $('f_milestone') ? String($('f_milestone').value || '').trim() : null;
+        const isArchivedVal = kind === 'task' && $('f_archived') ? ($('f_archived').value === 'true') : null;
+        const platformVal = kind === 'version' && $('f_platform') ? $('f_platform').value : null;
+        const versionInternalSave = kind === 'version' && $('f_version_notes') ? $('f_version_notes').value : '';
 
         const before = structuredClone(findRow(kind, row.id));
         try{
@@ -1599,13 +1806,32 @@
           if(kind==='milestone'){
             applyLocal(kind, row.id, { title: name, status: taskStatusToMsStatus(status), delayed_note: note });
           }else if(kind==='version'){
-            applyLocal(kind, row.id, { status, release_notes: note });
+            applyLocal(kind, row.id, {
+              version_num: name,
+              status,
+              target_date: due || '',
+              release_notes: note,
+              notes: versionInternalSave,
+              platform: platformVal || row.platform,
+            });
           }else if(kind==='ops'){
             applyLocal(kind, row.id, { name, status, target_date: due, note, is_focus: focus });
           }else if(kind==='bug'){
             applyLocal(kind, row.id, { name, status, due_date: due, note, module, is_focus: focus });
           }else if(kind==='task'){
-            applyLocal(kind, row.id, { name, status, priority, due_date: due, note, module, is_focus: focus, owners: owners || [] });
+            applyLocal(kind, row.id, {
+              name, status, priority, due_date: due, note, module, is_focus: focus, owners: owners || [],
+              version_ios_id: taskVers.version_ios_id,
+              version_android_id: taskVers.version_android_id,
+              version_web_id: taskVers.version_web_id,
+              version_id: taskVers.version_id,
+              platforms: taskVers.platforms,
+              this_week: thisWeekTask,
+              task_type: taskTypeVal,
+              source: sourceVal,
+              milestone_id: milestoneVal || null,
+              is_archived: isArchivedVal,
+            });
           }else if(kind==='backlog'){
             applyLocal(kind, row.id, { name, priority, note, module });
           }
@@ -1617,8 +1843,12 @@
             patch.status = taskStatusToMsStatus(status);
             patch.delayed_note = note;
           }else if(kind==='version'){
+            patch.version_num = name;
             patch.status = status;
+            patch.target_date = due || '';
             patch.release_notes = note;
+            patch.notes = versionInternalSave;
+            if(platformVal) patch.platform = platformVal;
           }else if(kind==='ops'){
             patch.name = name;
             patch.status = status;
@@ -1641,6 +1871,16 @@
             patch.module = module;
             patch.is_focus = focus;
             patch.owners = owners || [];
+            patch.version_ios_id = taskVers.version_ios_id;
+            patch.version_android_id = taskVers.version_android_id;
+            patch.version_web_id = taskVers.version_web_id;
+            patch.version_id = taskVers.version_id;
+            patch.platforms = taskVers.platforms;
+            if(thisWeekTask !== null) patch.this_week = thisWeekTask;
+            if(taskTypeVal) patch.task_type = taskTypeVal;
+            if(sourceVal) patch.source = sourceVal;
+            patch.milestone_id = milestoneVal || null;
+            if(isArchivedVal !== null) patch.is_archived = isArchivedVal;
           }else if(kind==='backlog'){
             patch.name = name;
             patch.priority = priority;
@@ -1716,7 +1956,7 @@
             render();
             await patchById('versions','id',row.id,{ status: next });
             toast('ok','已更新');
-            await refresh();
+            await refreshRemote();
             return;
           }
           if(kind==='milestone'){
@@ -1726,16 +1966,16 @@
             render();
             await patchById('milestones','id',row.id,{ status: taskStatusToMsStatus(next) });
             toast('ok','已更新');
-            await refresh();
+            await refreshRemote();
             return;
           }
           const next = statusCycle(row.status);
           applyLocal(kind, row.id, { status: next });
           render();
           await patchById(kindToTable(kind), 'id', row.id, { status: next });
-          toast('ok', app.localOnly ? '已在本地更新（不影响后端）' : '已更新');
+          toast('ok', '已更新');
           saveLocalDraft();
-          if(!app.localOnly) await refresh();
+          await refreshRemote();
         }catch(e){
           console.warn(e);
           // 保持前端变更不回滚，进入待同步队列
@@ -1745,20 +1985,260 @@
         }
       }
 
-      async function quickAdd(kind){
+      function mergeCreatedIntoList(table, realId, created){
+        const listName = table === 'tasks' ? 'tasks'
+          : table === 'bugs' ? 'bugs'
+          : table === 'ops_actions' ? 'ops'
+          : table === 'backlog' ? 'backlog'
+          : null;
+        if(!listName || !created) return;
+        const list = app.board[listName] || [];
+        const idx = list.findIndex(x=>x && String(x.id) === String(realId));
+        if(idx >= 0) list[idx] = { ...list[idx], ...created };
+      }
+
+      function buildCreateFormHTML(kind){
+        if(kind === 'task'){
+          return `
+            <div class="field">
+              <div class="label">名称</div>
+              <input class="input" id="c_name" placeholder="任务名称" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <div class="label">状态</div>
+                <select class="select" id="c_status">${statusOptions('task', 'ns')}</select>
+              </div>
+              <div class="field">
+                <div class="label">优先级</div>
+                <select class="select" id="c_priority">
+                  ${['p0','p1','p2','p3'].map(p=>`<option value="${p}" ${p==='p2'?'selected':''}>${p.toUpperCase()}</option>`).join('')}
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="label">模块</div>
+              <input class="input" id="c_module" value="功能开发" placeholder="例如：功能开发" />
+            </div>
+            <div class="field">
+              <div class="label">截止日期</div>
+              <input class="input" id="c_due" placeholder="例如：2026-04-27" />
+            </div>
+            <div class="field">
+              <div class="label">负责人</div>
+              <input class="input" id="c_owners" placeholder="逗号分隔" />
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · iOS</div>
+              <select class="select" id="c_v_ios">${versionSelectOptions('ios', '')}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · 安卓</div>
+              <select class="select" id="c_v_android">${versionSelectOptions('android', '')}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · Web</div>
+              <select class="select" id="c_v_web">${versionSelectOptions('web', '')}</select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <div class="label">列入本周跟进</div>
+                <select class="select" id="c_this_week">
+                  <option value="true" selected>是</option>
+                  <option value="false">否</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="label">本周重点</div>
+                <select class="select" id="c_is_focus">
+                  <option value="false" selected>否</option>
+                  <option value="true">是</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="label">备注</div>
+              <textarea class="textarea" id="c_note" placeholder="可选"></textarea>
+            </div>
+          `;
+        }
+        if(kind === 'bug'){
+          return `
+            <div class="field">
+              <div class="label">名称</div>
+              <input class="input" id="c_name" placeholder="Bug 简述" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <div class="label">严重级别</div>
+                <select class="select" id="c_severity">
+                  <option value="s0">S0</option>
+                  <option value="s1" selected>S1</option>
+                  <option value="s2">S2</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="label">状态</div>
+                <select class="select" id="c_status">${statusOptions('bug', 'ns')}</select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="label">模块</div>
+              <input class="input" id="c_module" value="Bug" />
+            </div>
+            <div class="field">
+              <div class="label">截止日期</div>
+              <input class="input" id="c_due" />
+            </div>
+            <div class="field">
+              <div class="label">本周重点</div>
+              <select class="select" id="c_is_focus">
+                <option value="false" selected>否</option>
+                <option value="true">是</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="label">备注</div>
+              <textarea class="textarea" id="c_note"></textarea>
+            </div>
+          `;
+        }
+        if(kind === 'ops'){
+          return `
+            <div class="field">
+              <div class="label">名称</div>
+              <input class="input" id="c_name" placeholder="运营动作名称" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <div class="label">类型</div>
+                <select class="select" id="c_category">
+                  <option value="merchandise">商品/素材</option>
+                  <option value="collab">合作</option>
+                  <option value="campaign" selected>活动</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="label">状态</div>
+                <select class="select" id="c_status">
+                  <option value="plan" selected>计划中</option>
+                  <option value="prog">进行中</option>
+                  <option value="done">已完成</option>
+                  <option value="pause">暂停</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <div class="label">目标日期</div>
+              <input class="input" id="c_target" />
+            </div>
+            <div class="field">
+              <div class="label">渠道</div>
+              <input class="input" id="c_channel" placeholder="可选" />
+            </div>
+            <div class="field">
+              <div class="label">本周重点</div>
+              <select class="select" id="c_is_focus">
+                <option value="false" selected>否</option>
+                <option value="true">是</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="label">备注</div>
+              <textarea class="textarea" id="c_note"></textarea>
+            </div>
+          `;
+        }
+        if(kind === 'backlog'){
+          const pid = app.backlogPhase || app.board?.currentPhase?.id || 1;
+          return `
+            <div class="field">
+              <div class="label">名称</div>
+              <input class="input" id="c_name" placeholder="Backlog 标题" />
+            </div>
+            <div class="field">
+              <div class="label">优先级</div>
+              <select class="select" id="c_priority">
+                ${['p0','p1','p2','p3'].map(p=>`<option value="${p}" ${p==='p2'?'selected':''}>${p.toUpperCase()}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field">
+              <div class="label">模块</div>
+              <input class="input" id="c_module" />
+            </div>
+            <input type="hidden" id="c_phase_id" value="${esc(String(pid))}" />
+            <div class="field">
+              <div class="label">备注</div>
+              <textarea class="textarea" id="c_note"></textarea>
+            </div>
+          `;
+        }
+        return '';
+      }
+
+      function openCreateModal(kind){
+        if(!app.board){
+          toast('bad', '数据未加载');
+          return;
+        }
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog' };
+        app.pendingCreateKind = kind;
+        $('createModalTitle').textContent = titles[kind] || '新建';
+        $('createModalBody').innerHTML = buildCreateFormHTML(kind);
+        $('createModal').classList.add('open');
+        $('createModal').setAttribute('aria-hidden', 'false');
+        setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
+      }
+
+      function closeCreateModal(){
+        app.pendingCreateKind = null;
+        $('createModal').classList.remove('open');
+        $('createModal').setAttribute('aria-hidden', 'true');
+        $('createModalBody').innerHTML = '';
+      }
+
+      async function submitCreate(){
+        const kind = app.pendingCreateKind;
+        if(!kind || !app.board) return;
+        const name = ($('c_name') && $('c_name').value.trim()) || '';
+        if(!name){
+          toast('bad', '请填写名称');
+          return;
+        }
         try{
-          if(kind==='task'){
-            const row = { name:'新任务', status:'ns', priority:'p2', this_week:true, is_focus:false, due_date:'', module:'功能开发', note:'' };
+          if(kind === 'task'){
+            const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
+            const row = {
+              name,
+              status: $('c_status').value,
+              priority: $('c_priority').value,
+              this_week: $('c_this_week').value === 'true',
+              is_focus: $('c_is_focus').value === 'true',
+              due_date: ($('c_due') && $('c_due').value.trim()) || '',
+              module: ($('c_module') && $('c_module').value.trim()) || '功能开发',
+              note: ($('c_note') && $('c_note').value) || '',
+              owners: ($('c_owners') && $('c_owners').value.split(',').map(s=>s.trim()).filter(Boolean)) || [],
+              platforms: tv.platforms,
+              version_id: tv.version_id,
+              version_ios_id: tv.version_ios_id,
+              version_android_id: tv.version_android_id,
+              version_web_id: tv.version_web_id,
+              source: 'internal',
+            };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.tasks = app.board.tasks || [];
             app.board.tasks.unshift({ id: tmpId, ...row });
+            closeCreateModal();
             render();
             saveLocalDraft();
             try{
               const rows = await insertRow('tasks', row);
               const created = rows?.[0];
-              if(created?.id) replaceTempId('tasks', tmpId, created.id);
-              toast('ok','已新增');
+              if(created?.id){
+                replaceTempId('tasks', tmpId, created.id);
+                mergeCreatedIntoList('tasks', created.id, created);
+              }
+              toast('ok', '已新增');
               saveLocalDraft();
             }catch(e){
               console.warn(e);
@@ -1767,18 +2247,32 @@
             }
             return;
           }
-          if(kind==='bug'){
-            const row = { name:'新 Bug', status:'ns', severity:'s1', is_focus:false, due_date:'', module:'Bug', note:'' };
+          if(kind === 'bug'){
+            const row = {
+              name,
+              status: $('c_status').value,
+              severity: $('c_severity').value,
+              is_focus: $('c_is_focus').value === 'true',
+              due_date: ($('c_due') && $('c_due').value.trim()) || '',
+              module: ($('c_module') && $('c_module').value.trim()) || 'Bug',
+              note: ($('c_note') && $('c_note').value) || '',
+              platforms: [],
+              source: 'user',
+            };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.bugs = app.board.bugs || [];
             app.board.bugs.unshift({ id: tmpId, ...row });
+            closeCreateModal();
             render();
             saveLocalDraft();
             try{
               const rows = await insertRow('bugs', row);
               const created = rows?.[0];
-              if(created?.id) replaceTempId('bugs', tmpId, created.id);
-              toast('ok','已新增');
+              if(created?.id){
+                replaceTempId('bugs', tmpId, created.id);
+                mergeCreatedIntoList('bugs', created.id, created);
+              }
+              toast('ok', '已新增');
               saveLocalDraft();
             }catch(e){
               console.warn(e);
@@ -1787,18 +2281,32 @@
             }
             return;
           }
-          if(kind==='ops'){
-            const row = { name:'新运营动作', status:'plan', category:'campaign', target_date:'', channel:'', owners:[], note:'', is_archived:false, is_focus:false };
+          if(kind === 'ops'){
+            const row = {
+              name,
+              status: $('c_status').value,
+              category: $('c_category').value,
+              target_date: ($('c_target') && $('c_target').value.trim()) || '',
+              channel: ($('c_channel') && $('c_channel').value.trim()) || '',
+              owners: [],
+              note: ($('c_note') && $('c_note').value) || '',
+              is_archived: false,
+              is_focus: $('c_is_focus').value === 'true',
+            };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.ops = app.board.ops || [];
             app.board.ops.unshift({ id: tmpId, ...row });
+            closeCreateModal();
             render();
             saveLocalDraft();
             try{
               const rows = await insertRow('ops_actions', row);
               const created = rows?.[0];
-              if(created?.id) replaceTempId('ops_actions', tmpId, created.id);
-              toast('ok','已新增');
+              if(created?.id){
+                replaceTempId('ops_actions', tmpId, created.id);
+                mergeCreatedIntoList('ops_actions', created.id, created);
+              }
+              toast('ok', '已新增');
               saveLocalDraft();
             }catch(e){
               console.warn(e);
@@ -1807,19 +2315,33 @@
             }
             return;
           }
-          if(kind==='backlog'){
-            const pid = app.backlogPhase || app.board.currentPhase?.id || 1;
-            const row = { name:'新 Backlog', priority:'p2', phase_id: pid, platforms:[], module:'', note:'', source:'internal', is_archived:false };
+          if(kind === 'backlog'){
+            const pidRaw = ($('c_phase_id') && $('c_phase_id').value) || String(app.backlogPhase || app.board.currentPhase?.id || 1);
+            const pid = Number(pidRaw);
+            const row = {
+              name,
+              priority: $('c_priority').value,
+              phase_id: Number.isFinite(pid) ? pid : pidRaw,
+              platforms: [],
+              module: ($('c_module') && $('c_module').value.trim()) || '',
+              note: ($('c_note') && $('c_note').value) || '',
+              source: 'internal',
+              is_archived: false,
+            };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.backlog = app.board.backlog || [];
             app.board.backlog.unshift({ id: tmpId, ...row });
+            closeCreateModal();
             render();
             saveLocalDraft();
             try{
               const rows = await insertRow('backlog', row);
               const created = rows?.[0];
-              if(created?.id) replaceTempId('backlog', tmpId, created.id);
-              toast('ok','已新增');
+              if(created?.id){
+                replaceTempId('backlog', tmpId, created.id);
+                mergeCreatedIntoList('backlog', created.id, created);
+              }
+              toast('ok', '已新增');
               saveLocalDraft();
             }catch(e){
               console.warn(e);
@@ -1830,9 +2352,9 @@
           }
         }catch(e){
           console.warn(e);
-          if(e && (e.status===401 || e.status===403)) toast('bad', '新增失败：RLS/未授权');
-          else if(String(e.message||'').includes('not_authenticated')) toast('warn', '请先登录管理员以写入');
-          else toast('bad','新增失败');
+          if(e && (e.status === 401 || e.status === 403)) toast('bad', '新增失败：RLS/未授权');
+          else if(String(e.message || '').includes('not_authenticated')) toast('warn', '请先登录管理员以写入');
+          else toast('bad', '新增失败');
         }
       }
 
@@ -1854,22 +2376,11 @@
             is_focus: false,
           });
           const newTask = inserted?.[0];
-          if(app.localOnly){
-            app.board.tasks = app.board.tasks || [];
-            app.board.tasks.unshift(newTask);
-            // 本地链接字段（如果存在）
-            applyLocal('backlog', row.id, { moved_to_task_id: newTask.id });
-            render();
-            toast('ok','已在本地移入本周（不影响后端）');
-            saveLocalDraft();
-            closeDrawer();
-            return;
-          }
           if(newTask?.id){
             try{ await patchById('backlog','id',row.id,{ moved_to_task_id: newTask.id }); }catch(_e){}
           }
           toast('ok','已移入本周');
-          await refresh();
+          await refreshRemote();
           closeDrawer();
         }catch(e){
           console.warn(e);
@@ -1893,21 +2404,9 @@
             is_archived: false,
             moved_to_task_id: row.id,
           });
-          if(app.localOnly){
-            const newBl = inserted?.[0];
-            app.board.backlog = app.board.backlog || [];
-            app.board.backlog.unshift(newBl);
-            applyLocal('task', row.id, { this_week: false, moved_from_backlog_id: row.moved_from_backlog_id || null });
-            render();
-            toast('ok','已在本地移至 Backlog（不影响后端）');
-            saveLocalDraft();
-            closeDrawer();
-            if(newBl) openDrawer('backlog', newBl);
-            return;
-          }
           try{ await patchById('tasks','id',row.id,{ this_week: false }); }catch(_e){}
           toast('ok','已移至 Backlog');
-          await refresh();
+          await refreshRemote();
           closeDrawer();
           const newBl = inserted?.[0];
           if(newBl) openDrawer('backlog', newBl);
@@ -1944,7 +2443,10 @@
                   <div class="focus-card" data-open="${it.kind}:${esc(it.row.id)}">
                     <div class="focus-top">
                       <span class="chip">${esc(mod)}</span>
-                      <span class="badge ${b.cls}" data-toggle="${it.kind}:${esc(it.row.id)}">${esc(b.label)}</span>
+                      <div class="focus-top-right">
+                        ${platformTagsHtmlForFocus(it.kind, it.row)}
+                        <span class="badge ${b.cls}" data-toggle="${it.kind}:${esc(it.row.id)}">${esc(b.label)}</span>
+                      </div>
                     </div>
                     <div class="focus-name">${esc(name || '未命名')}</div>
                     <div class="focus-info">
@@ -2029,9 +2531,9 @@
           });
         });
 
-        $('addTaskBtn').addEventListener('click', ()=> quickAdd('task'));
-        $('addBugBtn').addEventListener('click', ()=> quickAdd('bug'));
-        $('addOpsBtn').addEventListener('click', ()=> quickAdd('ops'));
+        $('addTaskBtn').addEventListener('click', ()=> openCreateModal('task'));
+        $('addBugBtn').addEventListener('click', ()=> openCreateModal('bug'));
+        $('addOpsBtn').addEventListener('click', ()=> openCreateModal('ops'));
       }
 
       function kpiCard(label, value, tone, sub){
@@ -2144,7 +2646,13 @@
           <div>
             ${versions.map(v=>{
               const b = versionBadge(v.status);
-              const vTasks = tasks.filter(t=>t.version_id === v.id);
+              const vTasks = tasks.filter(t=>{
+                const id = v.id;
+                return Number(t.version_id) === Number(id)
+                  || Number(t.version_ios_id) === Number(id)
+                  || Number(t.version_android_id) === Number(id)
+                  || Number(t.version_web_id) === Number(id);
+              });
               return `
                 <div class="version-card">
                   <div class="version-head" data-open="version:${esc(v.id)}">
@@ -2330,7 +2838,7 @@
             openDrawerByKey(kind, id);
           });
         });
-        $('addBacklogBtn').addEventListener('click', ()=> quickAdd('backlog'));
+        $('addBacklogBtn').addEventListener('click', ()=> openCreateModal('backlog'));
       }
 
       async function refresh(){
@@ -2372,8 +2880,11 @@
 
       $('overlay').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeDrawer(); });
       $('drawerClose').addEventListener('click', closeDrawer);
-      document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') { closeDrawer(); closeLogin(); } });
+      document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') { closeDrawer(); closeLogin(); closeCreateModal(); } });
       $('loginModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeLogin(); });
+      $('createModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeCreateModal(); });
+      $('createCancel').addEventListener('click', closeCreateModal);
+      $('createSubmit').addEventListener('click', ()=> submitCreate().catch(e=>{ console.warn(e); toast('bad','新增失败'); }));
 
       (async function init(){
         $('todayStr').textContent = todayStr();
