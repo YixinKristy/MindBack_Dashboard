@@ -1575,6 +1575,14 @@
         const m2 = e.getMonth()+1, d2 = e.getDate();
         return `${m1}月${d1}日 - ${m2}月${d2}日`;
       }
+      function formatSlashRange(ws){
+        const s = parseYmdLocal(ws);
+        if(!s) return '';
+        const e = new Date(s); e.setDate(e.getDate()+6);
+        const m1 = s.getMonth()+1, d1 = s.getDate();
+        const m2 = e.getMonth()+1, d2 = e.getDate();
+        return `${m1}/${d1}-${m2}/${d2}`;
+      }
       function firstYmdFromMaybeRange(s){
         const raw = String(s||'').trim();
         if(!raw) return '';
@@ -2257,6 +2265,13 @@
         const phaseDescValue = kind==='phase' ? (row.description || '') : '';
         const riskVal = !!row.is_risk;
         const riskNoteVal = row.risk_note || '';
+        const msWeekStartValue = (()=>{
+          if(kind!=='milestone') return '';
+          const df = String(row.date_full || '').trim();
+          if(df.includes('~')) return df.split('~')[0].trim();
+          if(df.match(/^\d{4}-\d{2}-\d{2}$/)) return df;
+          return '';
+        })();
 
         body.innerHTML = `
           <div class="field">
@@ -2324,6 +2339,15 @@
             <div class="field">
               <div class="label">所属周（周一）</div>
               <input class="input" id="f_week_start" value="${esc(row.week_start || '')}" placeholder="点击选择周范围…" readonly />
+            </div>
+          ` : ''}
+          ${kind==='milestone' ? `
+            <div class="field">
+              <div class="label">生效时间（对应周）</div>
+              <input class="input" id="f_ms_week" value="${esc(msWeekStartValue)}" placeholder="点击选择周范围…" readonly />
+              <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">
+                ${esc(msWeekStartValue ? formatMdRange(startOfWeekMonday(parseYmdLocal(msWeekStartValue))) : '')}
+              </div>
             </div>
           ` : ''}
 
@@ -2464,6 +2488,14 @@
             });
           }
         }
+        if(kind==='milestone'){
+          const wk = $('f_ms_week');
+          if(wk){
+            wk.addEventListener('click', ()=>{
+              openWeekPicker('f_ms_week');
+            });
+          }
+        }
         if(kind==='ops'){
           const t = $('f_due');
           if(t){
@@ -2532,6 +2564,7 @@
           const platformVal = kind === 'version' && $('f_platform') ? $('f_platform').value : null;
           const weekStartVal = kind === 'version' && $('f_week_start') ? $('f_week_start').value.trim() : null;
           const versionInternalSave = kind === 'version' && $('f_version_notes') ? $('f_version_notes').value : '';
+          const msWeekVal = kind === 'milestone' && $('f_ms_week') ? $('f_ms_week').value.trim() : null;
 
           const before = structuredClone(findRow(kind, row.id));
           // optimistic update
@@ -2543,7 +2576,10 @@
               description: phaseDesc,
             });
           }else if(kind==='milestone'){
-            applyLocal(kind, row.id, { title: name, status: taskStatusToMsStatus(status), delayed_note: note });
+            const ws = msWeekVal ? parseYmdLocal(msWeekVal) : null;
+            const date_full = ws ? `${ymd(ws)}~${ymd((()=>{ const e=new Date(ws); e.setDate(e.getDate()+6); return e; })())}` : (row.date_full || '');
+            const date_short = ws ? formatSlashRange(ymd(ws)) : (row.date_short || '');
+            applyLocal(kind, row.id, { title: name, status: taskStatusToMsStatus(status), delayed_note: note, date_full, date_short });
           }else if(kind==='version'){
             applyLocal(kind, row.id, {
               version_num: name,
@@ -2605,6 +2641,14 @@
             patch.title = name;
             patch.status = taskStatusToMsStatus(status);
             patch.delayed_note = note;
+            if(msWeekVal){
+              const ws = parseYmdLocal(msWeekVal);
+              if(ws){
+                const e = new Date(ws); e.setDate(e.getDate()+6);
+                patch.date_full = `${ymd(ws)}~${ymd(e)}`;
+                patch.date_short = formatSlashRange(ymd(ws));
+              }
+            }
           }else if(kind==='version'){
             patch.version_num = name;
             patch.status = status;
