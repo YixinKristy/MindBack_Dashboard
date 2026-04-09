@@ -3275,10 +3275,15 @@
               const created = rows?.[0];
               if(created?.id){
                 replaceTempId('tasks', tmpId, created.id);
-                mergeCreatedIntoList('tasks', created.id, created);
+                // 后端返回字段不完整时，避免覆盖前端已填的 name
+                const safeCreated = { ...created };
+                if(!safeCreated.name) safeCreated.name = row.name;
+                mergeCreatedIntoList('tasks', created.id, safeCreated);
               }
               toast('ok', '已新增');
               saveLocalDraft();
+              // 兜底：确保本周列表立即反映后端真实数据（避免出现“空任务”）
+              await refreshRemote();
             }catch(e){
               console.warn(e);
               enqueue({ op:'insert', table:'tasks', row, tempId: tmpId });
