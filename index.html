@@ -1590,6 +1590,28 @@
         if(raw.includes(' - ')) return raw.split(' - ')[0].trim();
         return raw;
       }
+      function parseRangeYmd(raw){
+        const s = String(raw||'').trim();
+        if(!s) return { start:null, end:null };
+        if(s.includes('~')){
+          const [a,b] = s.split('~').map(x=>x.trim());
+          const ds = parseYmdLocal(a);
+          const de = parseYmdLocal(b);
+          if(ds && de) return { start: ds, end: de };
+          const d1 = parseYmdLocal(a || b);
+          return { start: d1, end: d1 };
+        }
+        const d = parseYmdLocal(s);
+        return { start:d, end:d };
+      }
+      function rangesOverlap(aStart, aEnd, bStart, bEnd){
+        if(!(aStart instanceof Date) || !(aEnd instanceof Date) || !(bStart instanceof Date) || !(bEnd instanceof Date)) return false;
+        const as = new Date(aStart.getFullYear(), aStart.getMonth(), aStart.getDate()).getTime();
+        const ae = new Date(aEnd.getFullYear(), aEnd.getMonth(), aEnd.getDate()).getTime();
+        const bs = new Date(bStart.getFullYear(), bStart.getMonth(), bStart.getDate()).getTime();
+        const be = new Date(bEnd.getFullYear(), bEnd.getMonth(), bEnd.getDate()).getTime();
+        return Math.max(as, bs) <= Math.min(ae, be);
+      }
       function formatYmdZh(s){
         const d = parseYmdLocal(s);
         if(!d) return String(s||'').trim();
@@ -2325,7 +2347,7 @@
           ${(kind==='task' || kind==='bug') ? `
             <div class="field">
               <div class="label">${dueLabel}</div>
-              <input class="input" id="f_due" type="date" value="${esc(dueValue)}" />
+              <input class="input" id="f_due" value="${esc(dueValue)}" placeholder="点击选择日期或范围…" readonly />
             </div>
           ` : ''}
           ${kind==='ops' ? `
@@ -2496,7 +2518,7 @@
             });
           }
         }
-        if(kind==='ops'){
+        if(kind==='ops' || kind==='task' || kind==='bug'){
           const t = $('f_due');
           if(t){
             t.addEventListener('click', ()=>{
@@ -3578,7 +3600,7 @@
               ${focus.map(it=>{
                 const s = it.row.status;
                 const b = taskStatusBadge(s);
-                const due = it.kind==='ops' ? (formatDateOrRange(it.row.target_date) || '—') : (it.row.due_date || '—');
+                const due = it.kind==='ops' ? (formatDateOrRange(it.row.target_date) || '—') : (formatDateOrRange(it.row.due_date) || '—');
                 const name = it.kind==='task' ? it.row.name : it.row.name;
                 const mod = it.kind==='task' ? (it.row.module || '功能开发') : (it.kind==='bug' ? 'Bug' : (it.row.category || '运营'));
                 return `
@@ -4680,6 +4702,10 @@
         const currentSort = app.board.currentPhase?.sort_order || 99;
         const currentId = app.board.currentPhase?.id || null;
         const milestones = app.board.milestones || [];
+        const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
+        const bugsAll = (app.board.bugs || []).filter(b=>b && !b.is_archived);
+        const opsAll = (app.board.ops || []).filter(o=>o && !o.is_archived);
+        app.milestoneExpanded = app.milestoneExpanded || {};
         const byPhase = new Map();
         phases.forEach(p=> byPhase.set(p.id, []));
         milestones.forEach(m=>{
@@ -4737,14 +4763,40 @@
                     const b = taskStatusBadge(msStatusToTaskStatus(m.status));
                     const d = m.date_short || m.date_full || '—';
                     const doneCls = m.status==='done' ? 'done' : '';
+                    const expanded = !!app.milestoneExpanded[String(m.id)];
+                    const { start: msS, end: msE } = parseRangeYmd(m.date_full || '');
+                    const matchByWeek = (row)=>{
+                      const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
+                      const { start, end } = parseRangeYmd(raw);
+                      if(!start || !end || !msS || !msE) return false;
+                      return rangesOverlap(start, end, msS, msE);
+                    };
+                    const weekTasks = tasks.filter(t=> matchByWeek(t));
+                    const weekBugs = bugsAll.filter(bg=> matchByWeek(bg));
+                    const weekOps = opsAll.filter(o=> matchByWeek(o));
+                    const cnt = weekTasks.length + weekBugs.length + weekOps.length;
                     return `
                       <div class="ms-row" data-open="milestone:${esc(m.id)}">
                         <div class="ms-left">
                           <span class="ms-date">${esc(d)}</span>
                           <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
                         </div>
-                        ${statusSelectHTML('milestone', m)}
+                        <div style="display:flex;align-items:center;gap:10px;">
+                          <button class="btn ghost" type="button" data-msexpand="${esc(m.id)}" title="${expanded?'收起':'展开'}" style="padding:6px 10px;">${expanded?'▾':'▸'} ${cnt}</button>
+                          ${statusSelectHTML('milestone', m)}
+                        </div>
                       </div>
+                      ${expanded ? `
+                        <div style="padding:10px 12px 6px 12px;">
+                          ${weekTasks.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">功能（${weekTasks.length}）</div>` : ``}
+                          ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
+                          ${weekBugs.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">Bug（${weekBugs.length}）</div>` : ``}
+                          ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
+                          ${weekOps.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">运营（${weekOps.length}）</div>` : ``}
+                          ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
+                          ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:12px;">该周暂无已排期事项（请在全量任务里编辑时间范围）</div>` : ``}
+                        </div>
+                      ` : ``}
                     `;
                   }).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
                 </div>
@@ -4757,6 +4809,15 @@
           x.addEventListener('click', ()=>{
             const [kind, id] = x.getAttribute('data-open').split(':');
             openDrawerByKey(kind, id);
+          });
+        });
+        el.querySelectorAll('[data-msexpand]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const id = x.getAttribute('data-msexpand');
+            if(!id) return;
+            app.milestoneExpanded[String(id)] = !app.milestoneExpanded[String(id)];
+            render();
           });
         });
         el.querySelectorAll('[data-statuspick]').forEach(x=>{
