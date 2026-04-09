@@ -2084,6 +2084,10 @@
         const idx = list.findIndex(x=> x && (String(x.id)===String(id)));
         if(idx<0) return;
         app.board[listName][idx] = { ...app.board[listName][idx], ...patch };
+        // phases 被编辑时，同时更新 currentPhase 引用（总览/顶部徽标依赖它）
+        if(kind==='phase' && app.board?.currentPhase && String(app.board.currentPhase.id) === String(id)){
+          app.board.currentPhase = { ...app.board.currentPhase, ...patch };
+        }
       }
 
       function openDrawer(kind, row){
