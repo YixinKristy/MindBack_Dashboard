@@ -2891,14 +2891,15 @@
 
       function renderOverview(el){
         const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
-        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived && b.status !== 'done');
+        // 总览需要看到“历史版本”里已完成的 Bug，因此这里不过滤 done
+        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived);
         const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
         const milestones = (app.board.milestones || []);
         const backlog = (app.board.backlog || []).filter(x=>x && !x.is_archived);
 
         const doneThisWeek = tasks.filter(t=>t.this_week && t.status==='done').length;
         const currentMs = milestones.filter(m=>m.status==='current').length;
-        const openBugs = bugs.length;
+        const openBugs = bugs.filter(b=>b && b.status !== 'done').length;
         const backlogRate = backlog.length ? Math.round((tasks.filter(t=>t.moved_from_backlog_id).length / Math.max(1, backlog.length)) * 100) : 0;
 
         const phase = app.board.currentPhase;
@@ -3079,7 +3080,12 @@
                   <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">${esc(cnt)}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
-                  <span class="badge ${vb.cls}" data-toggle="version:${esc(v.id)}">${esc(vb.label)}</span>
+                  <select class="select" data-ovvstatus="${esc(v.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+                    <option value="dev" ${v.status==='dev'?'selected':''}>开发中</option>
+                    <option value="testing" ${v.status==='testing'?'selected':''}>测试中</option>
+                    <option value="submitted" ${v.status==='submitted'?'selected':''}>已提审</option>
+                    <option value="released" ${v.status==='released'?'selected':''}>已发布</option>
+                  </select>
                   <button class="btn ghost" type="button" data-vertogglebtn="${esc(v.id)}" style="padding:6px 10px;" title="${expanded?'收起':'展开'}">${expanded?'▾':'▸'}</button>
                 </div>
               </div>
@@ -3240,6 +3246,29 @@
             if(!k) return;
             app.overviewSort[k] = x.value;
             render();
+          });
+          x.addEventListener('click', (e)=> e.stopPropagation());
+        });
+        el.querySelectorAll('[data-ovvstatus]').forEach(x=>{
+          x.addEventListener('change', async (e)=>{
+            e.stopPropagation();
+            const id = Number(x.getAttribute('data-ovvstatus'));
+            const next = x.value;
+            const before = findRow('version', id);
+            if(!before) return;
+            applyLocal('version', id, { status: next });
+            render();
+            try{
+              await patchById('versions','id', id, { status: next });
+              toast('ok','已更新版本状态');
+              saveLocalDraft();
+              await refreshRemote();
+            }catch(err){
+              console.warn(err);
+              enqueue({ op:'patch', table:'versions', idField:'id', idValue:id, patch:{ status: next } });
+              saveLocalDraft();
+              toast('warn','已在前端更新，待同步后端');
+            }
           });
           x.addEventListener('click', (e)=> e.stopPropagation());
         });
