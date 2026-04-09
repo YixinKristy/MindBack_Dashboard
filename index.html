@@ -3883,7 +3883,8 @@
         const phaseTitle = phase ? `${phase.name || ''}·${phase.theme || ''}`.replace(/\s*·\s*$/,'') : '第一阶段·稳功能基础';
         const phaseRange = phase?.month_range || '';
         const phaseDesc = phase?.description || '';
-        const monthGoalText = ((app.board?.overview?.month_goal || '').trim() || phaseDesc || '').trim();
+        // 月目标：优先用阶段 theme（与你的期望一致）；若为空再退回 board_overview.month_goal
+        const monthGoalText = ((phase?.theme || '').trim() || (app.board?.overview?.month_goal || '').trim() || '').trim();
 
         const daysUntil = (ymdStr)=>{
           const d = parseYmdLocal(ymdStr);
@@ -4149,6 +4150,14 @@
         const weekRangeZh = `${formatYmdZh(ymd(wStart))}—${formatYmdZh(ymd(wEnd))}`;
         const monthTitle = `${now.getMonth()+1}月目标`;
 
+        // 当周阶段目标：取“本周周目标”那条里程碑标题（默认只取 1 条，避免挤爆卡片）
+        const weekMs = (milestones || []).find(m=>{
+          const { start: msS, end: msE } = parseRangeYmd(m?.date_full || m?.date_short || '');
+          if(!msS || !msE) return false;
+          return rangesOverlap(msS, msE, wStart, wEnd);
+        }) || null;
+        const weekGoalText = ((weekMs?.title || '').trim() || '').trim();
+
         // 总览固定展示近三周：上周 / 本周 / 下周（每周展示该周内所有端版本）
         const pickTop3 = ()=>{
           const weekStartOf = (v)=>{
@@ -4195,10 +4204,10 @@
               <div class="kpi-row">
                 <div class="kpi-card strip-primary" data-ovcard="ms">
                   <div class="kpi-title">${esc(monthTitle)}</div>
-                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(monthGoalText || '（点击编辑）')}</div>
+                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(monthGoalText || '—')}</div>
                   <div class="kpi-gap16"></div>
                   <div class="kpi-title">${esc(weekRangeZh)}阶段目标</div>
-                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc((phase?.theme || '').trim() || '（可在阶段里维护目标要点）')}</div>
+                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(weekGoalText || '—')}</div>
                 </div>
 
                 <div class="kpi-card strip-secondary" data-ovcard="release">
@@ -4317,18 +4326,44 @@
               </div>
               <div class="bar"><i style="width:${pct}%"></i></div>
               <div class="milestone-list">
-                ${(milestones || []).slice(0,6).map(m=>{
-                  const b = taskStatusBadge(msStatusToTaskStatus(m.status));
+                ${(milestones || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).slice(0,10).map(m=>{
+                  app.overviewMilestoneExpanded = app.overviewMilestoneExpanded || {};
                   const d = m.date_short || m.date_full || '';
                   const doneCls = m.status==='done' ? 'done' : '';
+                  const expanded = !!app.overviewMilestoneExpanded[String(m.id)];
+                  const { start: msS, end: msE } = parseRangeYmd(m.date_full || m.date_short || '');
+                  const matchByWeek = (row)=>{
+                    const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
+                    const { start, end } = parseRangeYmd(raw);
+                    if(!start || !end || !msS || !msE) return false;
+                    return rangesOverlap(start, end, msS, msE);
+                  };
+                  const weekTasks = tasks.filter(t=> matchByWeek(t));
+                  const weekBugs = bugs.filter(bg=> matchByWeek(bg));
+                  const weekOps = ops.filter(o=> matchByWeek(o));
+                  const cnt = weekTasks.length + weekBugs.length + weekOps.length;
                   return `
                     <div class="ms-row" data-open="milestone:${esc(m.id)}">
                       <div class="ms-left">
                         <span class="ms-date">${esc(d || '—')}</span>
                         <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
                       </div>
-                    ${statusSelectHTML('milestone', m)}
+                      <div style="display:flex;align-items:center;gap:10px;">
+                        <button class="btn ghost" type="button" data-ovmsexpand="${esc(m.id)}" title="${expanded?'收起':'展开'}" style="padding:6px 10px;">${expanded?'▾':'▸'} ${cnt}</button>
+                        ${statusSelectHTML('milestone', m)}
+                      </div>
                     </div>
+                    ${expanded ? `
+                      <div style="padding:10px 12px 6px 12px;">
+                        ${weekTasks.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">功能（${weekTasks.length}）</div>` : ``}
+                        ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
+                        ${weekBugs.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">Bug（${weekBugs.length}）</div>` : ``}
+                        ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
+                        ${weekOps.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">运营（${weekOps.length}）</div>` : ``}
+                        ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
+                        ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:12px;">该周暂无已排期事项</div>` : ``}
+                      </div>
+                    ` : ``}
                   `;
                 }).join('')}
               </div>
@@ -4340,6 +4375,16 @@
           x.addEventListener('click', ()=>{
             const [kind, id] = x.getAttribute('data-open').split(':');
             openDrawerByKey(kind, id);
+          });
+        });
+        el.querySelectorAll('[data-ovmsexpand]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const id = x.getAttribute('data-ovmsexpand');
+            if(!id) return;
+            app.overviewMilestoneExpanded = app.overviewMilestoneExpanded || {};
+            app.overviewMilestoneExpanded[String(id)] = !app.overviewMilestoneExpanded[String(id)];
+            render();
           });
         });
         // month goal removed from overview
