@@ -2538,8 +2538,9 @@
           }
 
           try{
-            await patchById(kindToTable(kind), 'id', row.id, patch);
-            toast('ok', '已保存');
+            const rows = await patchById(kindToTable(kind), 'id', row.id, patch);
+            const updated = Array.isArray(rows) ? rows[0] : null;
+            toast('ok', updated ? '已保存（已写入后端）' : '已保存（已写入后端）');
             saveLocalDraft();
             await refreshRemote();
             closeDrawer();
@@ -2553,7 +2554,7 @@
             }else if(e && (e.status===401 || e.status===403)){
               toast('warn', 'RLS 未放开：已在前端生效，待修复后同步');
             }else{
-              toast('warn', '网络/接口失败：已在前端生效，待同步');
+              toast('warn', '网络/接口失败：未写入后端（已在前端生效，待同步）');
             }
             closeDrawer();
           }
@@ -3496,9 +3497,7 @@
         const phaseTitle = phase ? `${phase.name || ''}·${phase.theme || ''}`.replace(/\s*·\s*$/,'') : '第一阶段·稳功能基础';
         const phaseRange = phase?.month_range || '';
         const phaseDesc = phase?.description || '';
-        const ov = app.board?.overview || null;
-        const monthGoal = (ov?.month_goal || '').trim();
-        const monthKey = ov?.month_key || '';
+        // 注意：总览不再展示“本月目标”（与阶段描述重复），保留数据但不显示
 
         const pTotal = 30;
         const pNow = Math.min(pTotal, 12);
@@ -3831,10 +3830,6 @@
               <div class="phase-head">
                 <div>
                   <div class="phase-title">${esc(phaseTitle)}</div>
-                  <div class="month-goal" id="monthGoalCard" title="点击编辑月目标">
-                    <div class="month-goal-kicker">${esc(monthKey ? (monthKey + ' 月目标') : '本月目标')}</div>
-                    <div class="month-goal-text">${esc(monthGoal || '点击填写本月目标…')}</div>
-                  </div>
                   <div class="phase-sub" style="margin-top:10px;">${esc(phaseDesc)}</div>
                 </div>
                 <div class="phase-range">${esc(phaseRange)}</div>
@@ -3866,15 +3861,7 @@
             openDrawerByKey(kind, id);
           });
         });
-        if($('monthGoalCard')){
-          $('monthGoalCard').addEventListener('click', ()=>{
-            if(!ov?.id){
-              toast('warn','未找到本月总览记录（board_overview）');
-              return;
-            }
-            openCreateModalWithDefaults('month_goal', { id: ov.id, month_key: ov.month_key, month_goal: ov.month_goal || '' });
-          });
-        }
+        // month goal removed from overview
         el.querySelectorAll('[data-vertogglebtn]').forEach(x=>{
           x.addEventListener('click', (e)=>{
             e.stopPropagation();
