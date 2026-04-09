@@ -2063,13 +2063,12 @@
         const dueValue = kind==='task' ? (row.due_date || '')
           : kind==='bug' ? (row.due_date || '')
           : kind==='ops' ? (row.target_date || '')
-          : kind==='version' ? (row.target_date || '')
           : '';
         const noteValue = kind==='version' ? (row.release_notes || '') : (row.note || '');
         const versionInternalNotes = kind==='version' ? (row.notes || '') : '';
         const moduleValue = row.module || '';
         const ownersValue = Array.isArray(row.owners) ? row.owners.join(',') : '';
-        const dueLabel = kind==='ops' || kind==='version' ? '目标日期' : '截止日期';
+        const dueLabel = kind==='ops' ? '目标日期' : '截止日期';
 
         body.innerHTML = `
           <div class="field">
@@ -2106,7 +2105,7 @@
             ` : `<div></div>`}
           </div>
 
-          ${(kind==='task' || kind==='bug' || kind==='ops' || kind==='version') ? `
+          ${(kind==='task' || kind==='bug' || kind==='ops') ? `
             <div class="field">
               <div class="label">${dueLabel}</div>
               <input class="input" id="f_due" type="date" value="${esc(dueValue)}" />
@@ -2283,7 +2282,6 @@
             applyLocal(kind, row.id, {
               version_num: name,
               status,
-              target_date: due || '',
               week_start: weekStartVal || null,
               release_notes: note,
               notes: versionInternalSave,
@@ -2333,7 +2331,6 @@
           }else if(kind==='version'){
             patch.version_num = name;
             patch.status = status;
-            patch.target_date = due || '';
             patch.week_start = weekStartVal || null;
             patch.release_notes = note;
             patch.notes = versionInternalSave;
@@ -2463,7 +2460,6 @@
         if(kind === 'version'){
           const plat = d.platform || app.versionsPlatform || 'ios';
           const vnum = d.version_num || '';
-          const tdate = d.target_date || '';
           const wstart = d.week_start || '';
           return `
             <div class="field">
@@ -2477,10 +2473,6 @@
             <div class="field">
               <div class="label">版本号</div>
               <input class="input" id="c_version_num" value="${esc(vnum)}" placeholder="例如：1.2.6" />
-            </div>
-            <div class="field">
-              <div class="label">目标日期</div>
-              <input class="input" id="c_target_date" type="date" value="${esc(tdate)}" />
             </div>
             <div class="field">
               <div class="label">所属周（周一）</div>
@@ -2844,7 +2836,6 @@
             const row = {
               platform,
               version_num,
-              target_date: ($('c_target_date') && $('c_target_date').value.trim()) || '',
               week_start: ($('c_week_start') && $('c_week_start').value.trim()) || null,
               status: ($('c_status') && $('c_status').value) || 'dev',
               release_notes: ($('c_release_notes') && $('c_release_notes').value) || '',
@@ -3432,7 +3423,7 @@
         }
         function versionWeekRangeLabel(v){
           const d = weekDateOfVersion(v);
-          if(!d) return (v.target_date || '');
+          if(!d) return '';
           const ws = startOfWeekMonday(d);
           return formatMdRange(ws);
         }
@@ -3452,7 +3443,7 @@
               <div class="ver-top" style="align-items:flex-start;">
                 <div style="min-width:0;">
                   <div class="ver-num" data-open="version:${esc(v.id)}">${esc(v.version_num || '')}</div>
-                  <div class="ver-plat">${esc(plat)} · ${esc(versionWeekRangeLabel(v))}</div>
+                  <div class="ver-plat">${esc(plat)} · ${esc(versionWeekRangeLabel(v) || '—')}</div>
                   <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">${esc(cnt)}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
@@ -3718,7 +3709,7 @@
                     <div class="version-num">${esc(v.version_num || '')}</div>
                     ${statusSelectHTML('version', v)}
                     <span class="chip">${esc(platLabel(v.platform))}</span>
-                    <span style="margin-left:auto;color:var(--text-secondary);font-size:12px;">${esc(v.target_date || '')}</span>
+                    <span style="margin-left:auto;color:var(--text-secondary);font-size:12px;">${esc(v.week_start || '')}</span>
                     <button class="btn" type="button" data-addtaskfor="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;">+ 新增功能</button>
                   </div>
                   <div class="version-tasks">
@@ -3764,7 +3755,7 @@
                     </div>
                   </div>
                   <div style="margin-top:10px;color:var(--text-secondary);font-size:12px;">
-                    ${esc(v.status==='submitted' ? ('提审：' + (v.submitted_at ? String(v.submitted_at).slice(0,10) : '—')) : ('目标：' + (v.target_date || '—')))}
+                    ${esc(v.week_start ? ('周：' + String(v.week_start).slice(5).replace('-','/')) : '')}
                   </div>
                 </div>
               `;
