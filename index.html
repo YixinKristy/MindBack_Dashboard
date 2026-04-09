@@ -4175,7 +4175,11 @@
             }
           }
 
-          const set = new Set(chosen.map(v=>v.id));
+          // 关键：本周需要展示“所有平台版本”，不能被 pickOne 挤掉
+          const set = new Set([
+            ...chosen.map(v=>v.id),
+            ...(groups.thisweek || []).map(v=>v.id),
+          ]);
           const past = (groups.past||[]).filter(v=>set.has(v.id));
           const thisweek = (groups.thisweek||[]).filter(v=>set.has(v.id));
           const future = (groups.future||[]).filter(v=>set.has(v.id));
