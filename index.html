@@ -4483,17 +4483,16 @@
         const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
         const versions = (app.board.versions || []).filter(v=>v);
 
-        app.allTasksFilter = app.allTasksFilter || { q:'', showDone:false, sort:'manual' };
+        // 全量任务：默认展示所有状态（含已完成）
+        app.allTasksFilter = app.allTasksFilter || { q:'', showDone:true, sort:'manual' };
         const q = String(app.allTasksFilter.q || '').trim().toLowerCase();
         const showDone = !!app.allTasksFilter.showDone;
         const sortKey = app.allTasksFilter.sort || 'manual';
 
-        const hasPlan = (row)=> linkedByVersion(row, row?.version_id) || rowLinkedVersions(row).length > 0 || !!row?.this_week || !!row?.is_focus;
         const pick = (kind, row)=>{
           const name = (row?.name || row?.title || '').trim();
           if(!name) return null;
           if(!showDone && String(row?.status||'') === 'done') return null;
-          if(!hasPlan(row) && String(row?.status||'') === 'ns') return null;
           if(q && !name.toLowerCase().includes(q) && !String(row?.note||'').toLowerCase().includes(q)) return null;
           const vids = rowLinkedVersions(row);
           const vlabels = vids.map(id=>{
