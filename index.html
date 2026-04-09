@@ -294,6 +294,16 @@
         letter-spacing: 0.04em;
         line-height: 1.2;
       }
+      .focus-owners{
+        margin-top: 10px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        line-height: 1.45;
+      }
+      .focus-owners .lbl{
+        color: var(--text-disabled);
+        margin-right: 6px;
+      }
       .meta-row{
         display:flex;
         align-items:center;
@@ -1161,6 +1171,12 @@
         return json;
       }
 
+      function formatOwnersDisplay(row){
+        const arr = Array.isArray(row?.owners) ? row.owners : [];
+        const s = arr.map(x=>String(x||'').trim()).filter(Boolean).join('、');
+        return s || '—';
+      }
+
       function priRank(p){ return p==='p0'?0 : p==='p1'?1 : p==='p2'?2 : 3; }
       function priDotCls(p){ return p==='p0' ? 'high' : p==='p1' ? 'mid' : ''; }
       function dotCls(s){ return s==='done'?'done' : s==='prog'?'prog' : s==='block'?'block' : ''; }
@@ -1884,6 +1900,7 @@
                       <span class="badge ${b.cls}" data-toggle="${it.kind}:${esc(it.row.id)}">${esc(b.label)}</span>
                     </div>
                     <div class="focus-name">${esc(name || '未命名')}</div>
+                    <div class="focus-owners"><span class="lbl">负责人</span>${esc(formatOwnersDisplay(it.row))}</div>
                     <div class="meta-row">
                       <span>截止：${esc(due)}</span>
                       <span>${esc(it.kind==='task'?'任务':it.kind==='bug'?'Bug':'运营')}</span>
