@@ -1090,6 +1090,16 @@
       }
       .input:focus, .select:focus, .textarea:focus{ background: rgba(37,39,49,1); }
       .textarea{ min-height: 90px; resize: vertical; }
+      /* Make native date icon visible in dark UI */
+      .date-input{
+        color-scheme: dark;
+      }
+      .date-input::-webkit-calendar-picker-indicator{
+        opacity: 0.72;
+        filter: invert(1) grayscale(1);
+        cursor: pointer;
+      }
+      .date-input:hover::-webkit-calendar-picker-indicator{ opacity: 0.92; }
       .drawer-foot{
         padding: 14px 18px;
         display:flex;
@@ -1360,17 +1370,11 @@
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;">
           <div class="field" style="margin:0;">
             <div class="label">开始</div>
-            <div style="position:relative;">
-              <input class="input" id="dpStart" type="date" />
-              <button class="btn ghost" id="dpStartBtn" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 8px;opacity:.9;">📅</button>
-            </div>
+            <input class="input date-input" id="dpStart" type="date" />
           </div>
           <div class="field" style="margin:0;">
             <div class="label">起止</div>
-            <div style="position:relative;">
-              <input class="input" id="dpEnd" type="date" placeholder="不填则为单日" />
-              <button class="btn ghost" id="dpEndBtn" type="button" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:6px 8px;opacity:.9;">📅</button>
-            </div>
+            <input class="input date-input" id="dpEnd" type="date" placeholder="不填则为单日" />
           </div>
         </div>
         <div class="modal-actions">
@@ -4301,10 +4305,6 @@
       });
 
       $('dpCancel').addEventListener('click', closeDateOrRangePicker);
-      // 让日历入口更明显：点击按钮直接弹出系统 date picker（支持的浏览器）
-      const tryShowPicker = (el)=>{ try{ el && el.showPicker && el.showPicker(); }catch(_e){} };
-      $('dpStartBtn').addEventListener('click', ()=>{ const el=$('dpStart'); if(el){ el.focus(); tryShowPicker(el); } });
-      $('dpEndBtn').addEventListener('click', ()=>{ const el=$('dpEnd'); if(el){ el.focus(); tryShowPicker(el); } });
       $('dpClear').addEventListener('click', ()=>{
         const id = app.datePicker.targetId;
         if(id){
