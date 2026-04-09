@@ -73,7 +73,27 @@
         padding: 10px 10px;
         border-radius: var(--radius-md);
         background: rgba(37,39,49,0.55);
+        position: relative;
       }
+      .sidebar-toggle{
+        position:absolute;
+        right: 8px;
+        top: 8px;
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        border:0;
+        background: rgba(46,47,58,0.55);
+        color: var(--text-secondary);
+        cursor:pointer;
+        transition: background .15s ease, color .15s ease, transform .15s ease;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+      }
+      .sidebar-toggle:hover{ background: rgba(46,47,58,0.9); color: var(--text-primary); transform: translateY(-1px); }
       .brand-dot{
         width: 28px;
         height: 28px;
@@ -1102,6 +1122,7 @@
         <div class="brand">
           <div class="brand-dot"></div>
           <div class="brand-name">MindBack</div>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" title="收起目录">≪</button>
         </div>
 
         <div class="nav" id="nav"></div>
@@ -1114,7 +1135,6 @@
           <div class="header-title" id="headerTitle">本周</div>
           <div class="header-right">
             <span id="todayStr">—</span>
-            <button class="btn ghost" id="sidebarToggle" type="button">目录</button>
             <button class="btn ghost" id="refreshBtn" type="button">刷新</button>
             <button class="btn ghost" id="syncBtn" type="button">同步</button>
             <button class="btn ghost" id="legacyBtn" type="button">回到旧版</button>
@@ -1601,8 +1621,8 @@
 
         const sidebarToggle = $('sidebarToggle');
         if(sidebarToggle){
-          sidebarToggle.textContent = app.sidebarCollapsed ? '展开目录' : '收起目录';
-          sidebarToggle.title = '折叠/展开左侧目录';
+          sidebarToggle.textContent = app.sidebarCollapsed ? '≫' : '≪';
+          sidebarToggle.title = app.sidebarCollapsed ? '展开目录' : '收起目录';
         }
       }
 
@@ -2180,6 +2200,7 @@
           : table === 'bugs' ? 'bugs'
           : table === 'ops_actions' ? 'ops'
           : table === 'backlog' ? 'backlog'
+          : table === 'versions' ? 'versions'
           : null;
         if(!listName || !created) return;
         const list = app.board[listName] || [];
@@ -2189,6 +2210,42 @@
 
       function buildCreateFormHTML(kind, defaults = null){
         const d = defaults && typeof defaults === 'object' ? defaults : {};
+        if(kind === 'version'){
+          const plat = d.platform || app.versionsPlatform || 'ios';
+          const vnum = d.version_num || '';
+          const tdate = d.target_date || '';
+          return `
+            <div class="field">
+              <div class="label">平台</div>
+              <select class="select" id="c_platform">
+                <option value="ios" ${plat==='ios'?'selected':''}>iOS</option>
+                <option value="android" ${plat==='android'?'selected':''}>Android</option>
+                <option value="web" ${plat==='web'?'selected':''}>Web</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="label">版本号</div>
+              <input class="input" id="c_version_num" value="${esc(vnum)}" placeholder="例如：1.2.6" />
+            </div>
+            <div class="field">
+              <div class="label">目标日期</div>
+              <input class="input" id="c_target_date" value="${esc(tdate)}" placeholder="例如：2026-04-12" />
+            </div>
+            <div class="field">
+              <div class="label">状态</div>
+              <select class="select" id="c_status">
+                <option value="dev" selected>开发中</option>
+                <option value="testing">测试中</option>
+                <option value="submitted">已提审</option>
+                <option value="released">已发布</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="label">Release notes（可选）</div>
+              <textarea class="textarea" id="c_release_notes" placeholder="可选"></textarea>
+            </div>
+          `;
+        }
         if(kind === 'task'){
           const defModule = (d.module || '功能开发');
           const defThisWeek = typeof d.this_week === 'boolean' ? String(d.this_week) : 'true';
@@ -2402,7 +2459,7 @@
           toast('bad', '数据未加载');
           return;
         }
-        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog' };
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本' };
         app.pendingCreateKind = kind;
         app.pendingCreateDefaults = null;
         $('createModalTitle').textContent = titles[kind] || '新建';
@@ -2417,7 +2474,7 @@
           toast('bad', '数据未加载');
           return;
         }
-        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog' };
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本' };
         app.pendingCreateKind = kind;
         app.pendingCreateDefaults = defaults && typeof defaults === 'object' ? defaults : null;
         $('createModalTitle').textContent = titles[kind] || '新建';
@@ -2438,12 +2495,50 @@
       async function submitCreate(){
         const kind = app.pendingCreateKind;
         if(!kind || !app.board) return;
-        const name = ($('c_name') && $('c_name').value.trim()) || '';
-        if(!name){
-          toast('bad', '请填写名称');
-          return;
-        }
         try{
+          if(kind === 'version'){
+            const platform = ($('c_platform') && $('c_platform').value) || (app.versionsPlatform || 'ios');
+            const version_num = ($('c_version_num') && $('c_version_num').value.trim()) || '';
+            if(!version_num){ toast('bad','请填写版本号'); return; }
+            const row = {
+              platform,
+              version_num,
+              target_date: ($('c_target_date') && $('c_target_date').value.trim()) || '',
+              status: ($('c_status') && $('c_status').value) || 'dev',
+              release_notes: ($('c_release_notes') && $('c_release_notes').value) || '',
+              notes: '',
+              sort_order: (app.board?.versions || []).length + 1,
+            };
+            const tmpId = -Math.floor(Math.random() * 1e9);
+            app.board.versions = app.board.versions || [];
+            app.board.versions.unshift({ id: tmpId, ...row });
+            closeCreateModal();
+            render();
+            saveLocalDraft();
+            try{
+              const rows = await insertRow('versions', row);
+              const created = rows?.[0];
+              if(created?.id){
+                // 复用 replaceTempId 逻辑（versions 单独处理）
+                const idx = app.board.versions.findIndex(x=>x && String(x.id)===String(tmpId));
+                if(idx >= 0) app.board.versions[idx] = { ...app.board.versions[idx], ...created, id: created.id };
+              }
+              toast('ok','已新增版本');
+              saveLocalDraft();
+              await refreshRemote();
+            }catch(e){
+              console.warn(e);
+              enqueue({ op:'insert', table:'versions', row, tempId: tmpId });
+              toast('warn','已在前端新增版本，待同步后端');
+            }
+            return;
+          }
+
+          const name = ($('c_name') && $('c_name').value.trim()) || '';
+          if(!name){
+            toast('bad', '请填写名称');
+            return;
+          }
           if(kind === 'task'){
             const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
@@ -2892,6 +2987,10 @@
             o: ops.filter(x=> linkedByVersion(x, vid)),
           };
         }
+        function hasAnyContent(vid){
+          const { t, b, o } = listByVersion(vid);
+          return (t.length + b.length + o.length) > 0;
+        }
         function opsStatusBadge(s){
           const cls = s==='done'?'done' : s==='prog'?'prog' : s==='pause'?'block' : 'ns';
           const label = s==='done'?'已完成' : s==='prog'?'进行中' : s==='pause'?'暂停' : '计划中';
@@ -2994,6 +3093,29 @@
 
         const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
 
+        // 总览最多展示 3 个版本；未来版本若无内容则不展示
+        const pickTop3 = ()=>{
+          const pickFrom = (arr)=> arr.filter(v=>v && hasAnyContent(v.id));
+          const past = pickFrom(groups.past).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+          const week = pickFrom(groups.thisweek).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+          const future = pickFrom(groups.future).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+          const other = pickFrom(groups.other).slice().sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0));
+          const chosen = [];
+          const pushN = (list)=>{ for(const v of list){ if(chosen.length>=3) break; if(!chosen.some(x=>x.id===v.id)) chosen.push(v); } };
+          pushN(past);
+          pushN(week);
+          pushN(future);
+          pushN(other);
+          const set = new Set(chosen.map(v=>v.id));
+          return {
+            past: past.filter(v=>set.has(v.id)),
+            thisweek: week.filter(v=>set.has(v.id)),
+            future: future.filter(v=>set.has(v.id)),
+            other: other.filter(v=>set.has(v.id)),
+          };
+        };
+        const top3 = pickTop3();
+
         el.innerHTML = `
           <div class="overview-wrap">
             <div class="kpi-stack">
@@ -3006,43 +3128,55 @@
             </div>
 
             <div class="ver-stack">
-              <div class="ver-group">
-                <div class="ver-group-head" data-vgroup="past">
-                  <div class="ver-group-title">历史版本</div>
-                  <div class="ver-group-meta">${(groups.past||[]).length} 个 · 点击展开</div>
+              ${top3.past.length ? `
+                <div class="ver-group">
+                  <div class="ver-group-head" data-vgroup="past">
+                    <div class="ver-group-title">历史版本</div>
+                    <div class="ver-group-meta">${top3.past.length} 个 · 点击展开</div>
+                  </div>
+                  <div style="display:${app.overviewGroupOpen.past?'block':'none'};" data-vgroup-body="past">
+                    ${top3.past.map(v=> verCard(v)).join('')}
+                  </div>
                 </div>
-                <div style="display:${app.overviewGroupOpen.past?'block':'none'};" data-vgroup-body="past">
-                  ${(groups.past||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
-                </div>
-              </div>
+              ` : ``}
 
-              <div class="ver-group">
-                <div class="ver-group-head" data-vgroup="thisweek">
-                  <div class="ver-group-title">${esc(weekRangeStr)}</div>
-                  <div class="ver-group-meta"></div>
+              ${top3.thisweek.length ? `
+                <div class="ver-group">
+                  <div class="ver-group-head" data-vgroup="thisweek">
+                    <div class="ver-group-title">${esc(weekRangeStr)}</div>
+                    <div class="ver-group-meta"></div>
+                  </div>
+                  ${top3.thisweek.map(v=> verCard(v)).join('')}
                 </div>
-                ${(groups.thisweek||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">本周暂无可解析目标日期的版本</div>`}
-              </div>
+              ` : ``}
 
-              <div class="ver-group">
-                <div class="ver-group-head" data-vgroup="future">
-                  <div class="ver-group-title">未来版本</div>
-                  <div class="ver-group-meta">${(groups.future||[]).length} 个 · 点击展开</div>
+              ${top3.future.length ? `
+                <div class="ver-group">
+                  <div class="ver-group-head" data-vgroup="future">
+                    <div class="ver-group-title">未来版本</div>
+                    <div class="ver-group-meta">${top3.future.length} 个 · 点击展开</div>
+                  </div>
+                  <div style="display:${app.overviewGroupOpen.future?'block':'none'};" data-vgroup-body="future">
+                    ${top3.future.map(v=> verCard(v)).join('')}
+                  </div>
                 </div>
-                <div style="display:${app.overviewGroupOpen.future?'block':'none'};" data-vgroup-body="future">
-                  ${(groups.future||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
-                </div>
-              </div>
+              ` : ``}
 
-              <div class="ver-group">
-                <div class="ver-group-head" data-vgroup="other">
-                  <div class="ver-group-title">未识别日期（手工维护）</div>
-                  <div class="ver-group-meta">${(groups.other||[]).length} 个 · 点击展开</div>
+              ${top3.other.length ? `
+                <div class="ver-group">
+                  <div class="ver-group-head" data-vgroup="other">
+                    <div class="ver-group-title">未识别日期（手工维护）</div>
+                    <div class="ver-group-meta">${top3.other.length} 个 · 点击展开</div>
+                  </div>
+                  <div style="display:${app.overviewGroupOpen.other?'block':'none'};" data-vgroup-body="other">
+                    ${top3.other.map(v=> verCard(v)).join('')}
+                  </div>
                 </div>
-                <div style="display:${app.overviewGroupOpen.other?'block':'none'};" data-vgroup-body="other">
-                  ${(groups.other||[]).map(v=> verCard(v)).join('') || `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无</div>`}
-                </div>
-              </div>
+              ` : ``}
+
+              ${(!top3.past.length && !top3.thisweek.length && !top3.future.length && !top3.other.length) ? `
+                <div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无可展示的版本内容</div>
+              ` : ``}
             </div>
 
             <div class="phase-card">
@@ -3125,8 +3259,11 @@
         const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
 
         el.innerHTML = `
-          <div class="pill-tabs">
-            ${plats.map(p=>`<div class="pill-tab ${p===app.versionsPlatform?'active':''}" data-plat="${p}">${platLabel(p)}</div>`).join('')}
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;">
+            <div class="pill-tabs" style="margin-bottom:0;">
+              ${plats.map(p=>`<div class="pill-tab ${p===app.versionsPlatform?'active':''}" data-plat="${p}">${platLabel(p)}</div>`).join('')}
+            </div>
+            <button class="btn primary" id="addVersionBtn" type="button">+ 新增版本</button>
           </div>
           <div>
             ${versions.map(v=>{
@@ -3202,6 +3339,9 @@
             openCreateModalWithDefaults('task', defaults);
           });
         });
+        if($('addVersionBtn')){
+          $('addVersionBtn').addEventListener('click', ()=> openCreateModalWithDefaults('version', { platform: app.versionsPlatform }));
+        }
       }
 
       function renderMilestones(el){
