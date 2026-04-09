@@ -1934,16 +1934,17 @@
             await refreshRemote();
             return;
           }
-          applyLocal(kind, id, { status: next });
+          const donePatch = (next === 'done' && !row?.done_at) ? { done_at: new Date().toISOString() } : {};
+          applyLocal(kind, id, { status: next, ...donePatch });
           render();
-          await patchById(kindToTable(kind), 'id', id, { status: next });
+          await patchById(kindToTable(kind), 'id', id, { status: next, ...donePatch });
           toast('ok','已更新');
           saveLocalDraft();
           await refreshRemote();
         }catch(e){
           console.warn(e);
           // 回填原状态到下拉（通过 refresh/re-render），但前端保持 next 并进入队列
-          enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue:id, patch: { status: (kind==='milestone' ? taskStatusToMsStatus(next) : next) } });
+          enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue:id, patch: { status: (kind==='milestone' ? taskStatusToMsStatus(next) : next), ...(next === 'done' && !row?.done_at ? { done_at: new Date().toISOString() } : {}) } });
           saveLocalDraft();
           toast('warn','已在前端更新，待同步后端');
         }
@@ -1981,9 +1982,9 @@
           selectTable('phases', '*', 'order=sort_order.asc'),
           selectTable('versions', '*', 'order=sort_order.asc'),
           selectTable('milestones', '*', 'order=sort_order.asc'),
-          selectTable('tasks', '*', 'order=id.asc'),
-          selectTable('bugs', '*', 'order=id.asc'),
-          selectTable('ops_actions', '*', 'order=id.asc'),
+          selectTable('tasks', '*', 'order=sort_order.asc,id.asc'),
+          selectTable('bugs', '*', 'order=sort_order.asc,id.asc'),
+          selectTable('ops_actions', '*', 'order=sort_order.asc,id.asc'),
           selectTable('backlog', '*', 'order=id.asc'),
           selectTable('board_overview', '*', 'order=month_key.desc&limit=1'),
         ]);
@@ -3482,7 +3483,47 @@
         ops.filter(o=>o.is_focus).forEach(o=> focusItems.push({ kind:'ops', row:o, module: o.category || '运营' }));
         const focus = focusItems;
 
-        const devList = tasks.slice().sort((a,b)=> priRank(a.priority)-priRank(b.priority));
+        app.thisWeekSort = app.thisWeekSort || { task:'manual', bug:'manual', ops:'manual' };
+        const sortKeyFor = (k)=> (app.thisWeekSort && app.thisWeekSort[k]) ? app.thisWeekSort[k] : 'manual';
+        const doneTs = (r)=>{
+          const s = String(r?.done_at || '').trim();
+          if(s){
+            const d = new Date(s);
+            if(!Number.isNaN(d.getTime())) return d.getTime();
+          }
+          const u = String(r?.updated_at || '').trim();
+          if(u){
+            const d = new Date(u);
+            if(!Number.isNaN(d.getTime())) return d.getTime();
+          }
+          return 0;
+        };
+        const manualRank = (r)=> Number.isFinite(Number(r?.sort_order)) ? Number(r.sort_order) : 0;
+        const sortListTw = (kind, list)=>{
+          const key = sortKeyFor(kind);
+          const arr = (list||[]).slice();
+          if(key === 'priority' && kind === 'task'){
+            arr.sort((a,b)=> priRank(a.priority) - priRank(b.priority) || manualRank(a) - manualRank(b) || Number(a.id)-Number(b.id));
+            return arr;
+          }
+          if(key === 'done_time'){
+            // 已完成优先，按完成时间倒序；未完成按手动顺序
+            arr.sort((a,b)=>{
+              const ad = (a?.status === 'done') ? 0 : 1;
+              const bd = (b?.status === 'done') ? 0 : 1;
+              if(ad !== bd) return ad - bd;
+              if(ad === 0) return doneTs(b) - doneTs(a);
+              return manualRank(a) - manualRank(b) || Number(a.id)-Number(b.id);
+            });
+            return arr;
+          }
+          // manual
+          arr.sort((a,b)=> manualRank(a) - manualRank(b) || Number(a.id)-Number(b.id));
+          return arr;
+        };
+        const devList = sortListTw('task', tasks);
+        const bugList = sortListTw('bug', bugs);
+        const opsList = sortListTw('ops', ops);
 
         el.innerHTML = `
           <div class="section">
@@ -3529,11 +3570,16 @@
               <div class="col">
                 <div class="col-head">
                   <div class="col-title">功能开发</div>
+                  <select class="select" data-twsort="task" style="width:auto;min-width:140px;padding:6px 10px;font-size:12px;">
+                    <option value="manual" ${sortKeyFor('task')==='manual'?'selected':''}>手动排序</option>
+                    <option value="priority" ${sortKeyFor('task')==='priority'?'selected':''}>按优先级</option>
+                    <option value="done_time" ${sortKeyFor('task')==='done_time'?'selected':''}>按完成时间</option>
+                  </select>
                   <button class="add-btn" id="addTaskBtn" type="button">+ 添加</button>
                 </div>
                 <div class="list">
                   ${devList.map(t=>`
-                    <div class="row-item dev" data-open="task:${esc(t.id)}">
+                    <div class="row-item dev" data-open="task:${esc(t.id)}" data-drag="task:${esc(t.id)}" draggable="${sortKeyFor('task')==='manual'?'true':'false'}">
                       <div class="row-name">${esc(t.name || '未命名')}</div>
                       <div class="dot ${esc(dotCls(t.status))}"></div>
                     </div>
@@ -3543,11 +3589,15 @@
               <div class="col">
                 <div class="col-head">
                   <div class="col-title">Bug 跟进</div>
+                  <select class="select" data-twsort="bug" style="width:auto;min-width:140px;padding:6px 10px;font-size:12px;">
+                    <option value="manual" ${sortKeyFor('bug')==='manual'?'selected':''}>手动排序</option>
+                    <option value="done_time" ${sortKeyFor('bug')==='done_time'?'selected':''}>按完成时间</option>
+                  </select>
                   <button class="add-btn" id="addBugBtn" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${(bugs||[]).map(b=>`
-                    <div class="row-item bug" data-open="bug:${esc(b.id)}">
+                  ${bugList.map(b=>`
+                    <div class="row-item bug" data-open="bug:${esc(b.id)}" data-drag="bug:${esc(b.id)}" draggable="${sortKeyFor('bug')==='manual'?'true':'false'}">
                       <div class="row-name">${esc(b.name || '未命名')}</div>
                       <div class="dot ${esc(dotCls(b.status))}"></div>
                     </div>
@@ -3557,11 +3607,15 @@
               <div class="col">
                 <div class="col-head">
                   <div class="col-title">运营动作</div>
+                  <select class="select" data-twsort="ops" style="width:auto;min-width:140px;padding:6px 10px;font-size:12px;">
+                    <option value="manual" ${sortKeyFor('ops')==='manual'?'selected':''}>手动排序</option>
+                    <option value="done_time" ${sortKeyFor('ops')==='done_time'?'selected':''}>按完成时间</option>
+                  </select>
                   <button class="add-btn" id="addOpsBtn" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${(ops||[]).map(o=>`
-                    <div class="row-item ops" data-open="ops:${esc(o.id)}">
+                  ${opsList.map(o=>`
+                    <div class="row-item ops" data-open="ops:${esc(o.id)}" data-drag="ops:${esc(o.id)}" draggable="${sortKeyFor('ops')==='manual'?'true':'false'}">
                       <div class="row-name">${esc(o.name || '未命名')}</div>
                       <div class="dot ${esc(dotCls(o.status))}"></div>
                     </div>
@@ -3635,6 +3689,86 @@
             app.activeTab = 'thisweek';
             render();
             openDrawerByKey(k, id);
+          });
+        });
+
+        // ThisWeek sort dropdowns
+        el.querySelectorAll('[data-twsort]').forEach(sel=>{
+          sel.addEventListener('change', ()=>{
+            const k = sel.getAttribute('data-twsort');
+            app.thisWeekSort = app.thisWeekSort || {};
+            app.thisWeekSort[k] = sel.value;
+            render();
+          });
+          sel.addEventListener('click', (e)=> e.stopPropagation());
+        });
+
+        // Drag & drop (manual sort only)
+        let dragging = null; // { kind, id }
+        const parseDrag = (s)=>{
+          const [k, id] = String(s||'').split(':');
+          return { kind:k, id:Number(id) };
+        };
+        const applyReorder = async (kind, ids)=>{
+          // renumber sort_order starting at 1
+          ids.forEach((id, idx)=> applyLocal(kind, id, { sort_order: idx+1 }));
+          render();
+          // persist (best effort)
+          for(let i=0;i<ids.length;i++){
+            const id = ids[i];
+            const patch = { sort_order: i+1 };
+            try{
+              await patchById(kindToTable(kind), 'id', id, patch);
+            }catch(e){
+              enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue:id, patch });
+              saveLocalDraft();
+              // stop early; remaining will be retried via sync queue
+              break;
+            }
+          }
+          renderHeader();
+        };
+        const listIds = (kind)=>{
+          if(kind==='task') return sortListTw('task', tasks).map(x=>Number(x.id)).filter(Number.isFinite);
+          if(kind==='bug') return sortListTw('bug', bugs).map(x=>Number(x.id)).filter(Number.isFinite);
+          return sortListTw('ops', ops).map(x=>Number(x.id)).filter(Number.isFinite);
+        };
+        el.querySelectorAll('[data-drag]').forEach(rowEl=>{
+          const { kind, id } = parseDrag(rowEl.getAttribute('data-drag'));
+          if(!(kind==='task'||kind==='bug'||kind==='ops')) return;
+          // only manual mode draggable
+          if(sortKeyFor(kind) !== 'manual') return;
+          rowEl.addEventListener('dragstart', (e)=>{
+            dragging = { kind, id };
+            try{ e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', `${kind}:${id}`); }catch(_e){}
+          });
+          rowEl.addEventListener('dragover', (e)=>{
+            if(!dragging || dragging.kind !== kind) return;
+            e.preventDefault();
+            rowEl.style.outline = '1px dashed rgba(195,198,215,0.35)';
+          });
+          rowEl.addEventListener('dragleave', ()=>{
+            rowEl.style.outline = '';
+          });
+          rowEl.addEventListener('drop', async (e)=>{
+            if(!dragging || dragging.kind !== kind) return;
+            e.preventDefault();
+            rowEl.style.outline = '';
+            const targetId = id;
+            const draggedId = dragging.id;
+            if(draggedId === targetId) return;
+            const ids = listIds(kind);
+            const from = ids.indexOf(draggedId);
+            const to = ids.indexOf(targetId);
+            if(from < 0 || to < 0) return;
+            ids.splice(from, 1);
+            const insertAt = (from < to) ? to-0 : to;
+            ids.splice(insertAt, 0, draggedId);
+            await applyReorder(kind, ids);
+          });
+          rowEl.addEventListener('dragend', ()=>{
+            dragging = null;
+            rowEl.style.outline = '';
           });
         });
 
