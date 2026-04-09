@@ -1116,6 +1116,87 @@
         justify-content:flex-end;
         margin-top: 12px;
       }
+      /* ── Date range picker (week) ── */
+      .date-card{
+        width: 520px;
+        max-width: 100%;
+        background: rgba(255,255,255,0.92);
+        color: #12131a;
+        border-radius: 22px;
+        padding: 16px;
+      }
+      .date-top{
+        display:flex;
+        align-items:center;
+        gap: 10px;
+        border-radius: 16px;
+        padding: 12px 12px;
+        background: rgba(56,132,255,0.08);
+        border: 2px solid rgba(56,132,255,0.55);
+      }
+      .date-top .cal-ico{ width: 22px; text-align:center; opacity:.9; }
+      .date-top .date-top-text{ flex:1; min-width:0; }
+      .date-top .date-top-kicker{ font-size: 12px; color: rgba(18,19,26,0.65); }
+      .date-top .date-top-val{ font-size: 20px; font-weight: 850; letter-spacing: 0.02em; margin-top: 2px; }
+      .date-month{
+        margin-top: 14px;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+      }
+      .date-month .m-title{ font-size: 28px; font-weight: 900; }
+      .date-month .m-nav{ display:flex; gap: 10px; }
+      .m-btn{
+        width: 34px; height: 34px;
+        border-radius: 999px;
+        border: 0;
+        background: rgba(18,19,26,0.08);
+        cursor:pointer;
+        font-weight: 900;
+      }
+      .dow{
+        margin-top: 14px;
+        display:grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 6px;
+        font-weight: 850;
+        color: rgba(18,19,26,0.75);
+        font-size: 12px;
+        text-align:center;
+      }
+      .grid{
+        margin-top: 8px;
+        display:grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 6px;
+      }
+      .day{
+        height: 40px;
+        border-radius: 999px;
+        border: 0;
+        background: transparent;
+        cursor:pointer;
+        font-weight: 800;
+        color: rgba(18,19,26,0.82);
+      }
+      .day.muted{ color: rgba(18,19,26,0.28); cursor:default; }
+      .day.sel{ background: rgba(56,132,255,0.16); color: rgba(20,74,255,0.92); }
+      .day.edge{ background: rgba(56,132,255,1); color: white; box-shadow: 0 8px 18px rgba(56,132,255,0.25); }
+      .date-actions{
+        margin-top: 16px;
+        display:flex;
+        gap: 12px;
+      }
+      .date-actions .pill{
+        flex:1;
+        height: 46px;
+        border-radius: 999px;
+        border:0;
+        font-weight: 900;
+        cursor:pointer;
+      }
+      .pill.remove{ background: rgba(18,19,26,0.18); color: rgba(18,19,26,0.68); }
+      .pill.done{ background: rgba(56,132,255,1); color: white; }
       .err{
         margin-top: 10px;
         background: rgba(255,107,107,0.12);
@@ -1217,6 +1298,33 @@
         <div class="modal-actions">
           <button class="btn ghost" id="createCancel" type="button">取消</button>
           <button class="btn primary" id="createSubmit" type="button">确认添加</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Week range picker -->
+    <div class="modal" id="weekPickerModal" aria-hidden="true">
+      <div class="date-card" role="dialog" aria-modal="true" aria-label="选择周范围">
+        <div class="date-top">
+          <div class="cal-ico">🗓</div>
+          <div class="date-top-text">
+            <div class="date-top-kicker">Select a week</div>
+            <div class="date-top-val" id="wkPickTop">—</div>
+          </div>
+          <div style="opacity:.65;font-weight:900;">▾</div>
+        </div>
+        <div class="date-month">
+          <div class="m-title" id="wkMonthTitle">—</div>
+          <div class="m-nav">
+            <button class="m-btn" id="wkPrev" type="button">‹</button>
+            <button class="m-btn" id="wkNext" type="button">›</button>
+          </div>
+        </div>
+        <div class="dow"><div>M</div><div>T</div><div>W</div><div>T</div><div>F</div><div>S</div><div>S</div></div>
+        <div class="grid" id="wkGrid"></div>
+        <div class="date-actions">
+          <button class="pill remove" id="wkRemove" type="button">Remove</button>
+          <button class="pill done" id="wkDone" type="button">Done</button>
         </div>
       </div>
     </div>
@@ -1357,6 +1465,18 @@
       }
       function isInSameWeekMondayToSunday(a, b){
         return startOfWeekMonday(a).getTime() === startOfWeekMonday(b).getTime();
+      }
+      function formatMdRange(startDate){
+        if(!(startDate instanceof Date)) return '—';
+        const s = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+        const e = new Date(s); e.setDate(e.getDate()+6);
+        const m1 = s.getMonth()+1, d1 = s.getDate();
+        const m2 = e.getMonth()+1, d2 = e.getDate();
+        return `${m1}月${d1}日 - ${m2}月${d2}日`;
+      }
+      function ymd(d){
+        const pad = (n)=> String(n).padStart(2,'0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
       }
 
       async function sbFetch(path, { method='GET', headers={}, body=null } = {}){
@@ -1996,7 +2116,7 @@
           ${kind==='version' ? `
             <div class="field">
               <div class="label">所属周（周一）</div>
-              <input class="input" id="f_week_start" type="date" value="${esc(row.week_start || '')}" />
+              <input class="input" id="f_week_start" value="${esc(row.week_start || '')}" placeholder="点击选择周范围…" readonly />
             </div>
           ` : ''}
 
@@ -2116,6 +2236,15 @@
             }
           });
         });
+
+        if(kind==='version'){
+          const wk = $('f_week_start');
+          if(wk){
+            wk.addEventListener('click', ()=>{
+              openWeekPicker('f_week_start');
+            });
+          }
+        }
       }
 
       async function drawerSave(){
@@ -2355,7 +2484,7 @@
             </div>
             <div class="field">
               <div class="label">所属周（周一）</div>
-              <input class="input" id="c_week_start" type="date" value="${esc(wstart)}" />
+              <input class="input" id="c_week_start" value="${esc(wstart)}" placeholder="点击选择周范围…" readonly />
             </div>
             <div class="field">
               <div class="label">状态</div>
@@ -2619,6 +2748,78 @@
               app.pendingVersionPick = { elId: id, platform: p };
               openCreateModalWithDefaults('version', { platform: p });
             }
+          });
+        });
+
+        if(kind==='version'){
+          const wk = $('c_week_start');
+          if(wk){
+            wk.addEventListener('click', ()=>{
+              openWeekPicker('c_week_start');
+            });
+          }
+        }
+      }
+
+      // --- Week picker (select a week range, store Monday YYYY-MM-DD) ---
+      const weekPicker = { open:false, targetElId:null, cursor:new Date(), weekStart:null };
+      function openWeekPicker(targetElId){
+        weekPicker.open = true;
+        weekPicker.targetElId = targetElId;
+        const curVal = ($(targetElId)?.value || '').trim();
+        const d = parseYmdLocal(curVal);
+        weekPicker.weekStart = d ? startOfWeekMonday(d) : startOfWeekMonday(new Date());
+        weekPicker.cursor = new Date(weekPicker.weekStart.getFullYear(), weekPicker.weekStart.getMonth(), 1);
+        renderWeekPicker();
+        $('weekPickerModal').classList.add('open');
+        $('weekPickerModal').setAttribute('aria-hidden','false');
+      }
+      function closeWeekPicker(){
+        weekPicker.open = false;
+        $('weekPickerModal').classList.remove('open');
+        $('weekPickerModal').setAttribute('aria-hidden','true');
+      }
+      function renderWeekPicker(){
+        const cur = weekPicker.cursor;
+        const year = cur.getFullYear();
+        const month = cur.getMonth();
+        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+        $('wkMonthTitle').textContent = `${monthNames[month]} ${year}`;
+        $('wkPickTop').textContent = weekPicker.weekStart ? formatMdRange(weekPicker.weekStart) : '—';
+        const grid = $('wkGrid');
+        const first = new Date(year, month, 1);
+        const last = new Date(year, month+1, 0);
+        const startDay = (first.getDay() + 6) % 7; // Monday=0
+        const daysInMonth = last.getDate();
+        const cells = [];
+        for(let i=0;i<startDay;i++) cells.push({ type:'empty' });
+        for(let d=1; d<=daysInMonth; d++){
+          cells.push({ type:'day', date: new Date(year, month, d) });
+        }
+        while(cells.length % 7 !== 0) cells.push({ type:'empty' });
+        const ws = weekPicker.weekStart ? startOfWeekMonday(weekPicker.weekStart) : null;
+        const we = ws ? (()=>{ const x=new Date(ws); x.setDate(x.getDate()+6); return x; })() : null;
+        const inRange = (dt)=>{
+          if(!ws || !we) return false;
+          const t = dt.getTime();
+          return t >= ws.getTime() && t <= we.getTime();
+        };
+        const isEdge = (dt)=>{
+          if(!ws || !we) return false;
+          return dt.getTime() === ws.getTime() || dt.getTime() === we.getTime();
+        };
+        grid.innerHTML = cells.map(c=>{
+          if(c.type==='empty') return `<button class="day muted" type="button" disabled> </button>`;
+          const dt = c.date;
+          const cls = inRange(dt) ? (isEdge(dt) ? 'day edge' : 'day sel') : 'day';
+          return `<button class="${cls}" type="button" data-wkday="${ymd(dt)}">${dt.getDate()}</button>`;
+        }).join('');
+        grid.querySelectorAll('[data-wkday]').forEach(btn=>{
+          btn.addEventListener('click', ()=>{
+            const d = parseYmdLocal(btn.getAttribute('data-wkday'));
+            if(!d) return;
+            weekPicker.weekStart = startOfWeekMonday(d);
+            renderWeekPicker();
           });
         });
       }
@@ -3229,6 +3430,12 @@
             </div>
           `;
         }
+        function versionWeekRangeLabel(v){
+          const d = weekDateOfVersion(v);
+          if(!d) return (v.target_date || '');
+          const ws = startOfWeekMonday(d);
+          return formatMdRange(ws);
+        }
         function verCard(v){
           const vb = versionBadge(v.status);
           const plat = v.platform==='ios'?'📱 iOS' : v.platform==='android'?'🤖 Android' : '🕸 Web';
@@ -3245,7 +3452,7 @@
               <div class="ver-top" style="align-items:flex-start;">
                 <div style="min-width:0;">
                   <div class="ver-num" data-open="version:${esc(v.id)}">${esc(v.version_num || '')}</div>
-                  <div class="ver-plat">${esc(plat)} · ${esc(v.target_date || '')}</div>
+                  <div class="ver-plat">${esc(plat)} · ${esc(versionWeekRangeLabel(v))}</div>
                   <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">${esc(cnt)}</div>
                 </div>
                 <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
@@ -3790,8 +3997,27 @@
       document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') { closeDrawer(); closeLogin(); closeCreateModal(); } });
       $('loginModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeLogin(); });
       $('createModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeCreateModal(); });
+      $('weekPickerModal').addEventListener('click', (e)=>{ if(e.target === e.currentTarget) closeWeekPicker(); });
       $('createCancel').addEventListener('click', closeCreateModal);
       $('createSubmit').addEventListener('click', ()=> submitCreate().catch(e=>{ console.warn(e); toast('bad','新增失败'); }));
+      $('wkPrev').addEventListener('click', ()=>{ weekPicker.cursor = new Date(weekPicker.cursor.getFullYear(), weekPicker.cursor.getMonth()-1, 1); renderWeekPicker(); });
+      $('wkNext').addEventListener('click', ()=>{ weekPicker.cursor = new Date(weekPicker.cursor.getFullYear(), weekPicker.cursor.getMonth()+1, 1); renderWeekPicker(); });
+      $('wkRemove').addEventListener('click', ()=>{
+        if(weekPicker.targetElId){
+          const el = $(weekPicker.targetElId);
+          if(el) el.value = '';
+        }
+        closeWeekPicker();
+      });
+      $('wkDone').addEventListener('click', ()=>{
+        if(weekPicker.targetElId){
+          const el = $(weekPicker.targetElId);
+          if(el && weekPicker.weekStart){
+            el.value = ymd(weekPicker.weekStart);
+          }
+        }
+        closeWeekPicker();
+      });
 
       (async function init(){
         $('todayStr').textContent = todayStr();
