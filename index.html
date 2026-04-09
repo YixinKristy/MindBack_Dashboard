@@ -4185,6 +4185,10 @@
           // 关键：本周需要展示“所有平台版本”，不能被 pickOne 挤掉
           const set = new Set([
             ...chosen.map(v=>v.id),
+            // 上周/本周/下周：都展示该周内的全部版本（多平台不互相挤掉）
+            ...(byWeek.get(prevKey) || []).map(v=>v.id),
+            ...(byWeek.get(curW) || []).map(v=>v.id),
+            ...(byWeek.get(nextKey) || []).map(v=>v.id),
             ...thisWeekStrict.map(v=>v.id),
           ]);
           const past = (groups.past||[]).filter(v=>set.has(v.id));
