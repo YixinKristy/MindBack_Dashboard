@@ -1529,6 +1529,110 @@
         const label = s==='done'?'已完成' : s==='prog'?'进行中' : s==='block'?'阻塞' : '待开始';
         return { cls, label };
       }
+      function opsStatusBadge(s){
+        const cls = s==='done'?'done' : s==='prog'?'prog' : s==='pause'?'block' : 'ns';
+        const label = s==='done'?'已完成' : s==='prog'?'进行中' : s==='pause'?'暂停' : '计划中';
+        return { cls, label };
+      }
+
+      function linkedByVersion(row, vid){
+        if(!row) return false;
+        const id = Number(vid);
+        if(Number(row.version_id) === id) return true;
+        if(Number(row.version_ios_id) === id) return true;
+        if(Number(row.version_android_id) === id) return true;
+        if(Number(row.version_web_id) === id) return true;
+        return false;
+      }
+      function rowLinkedVersions(row){
+        const ids = [];
+        if(!row) return ids;
+        if(row.version_id) ids.push(Number(row.version_id));
+        if(row.version_ios_id) ids.push(Number(row.version_ios_id));
+        if(row.version_android_id) ids.push(Number(row.version_android_id));
+        if(row.version_web_id) ids.push(Number(row.version_web_id));
+        return Array.from(new Set(ids.filter(x=>Number.isFinite(x))));
+      }
+      function rowHasReleasedVersion(row){
+        const vids = rowLinkedVersions(row);
+        if(!vids.length) return false;
+        const vers = app.board?.versions || [];
+        return vids.some(id=>{
+          const v = vers.find(x=>x && Number(x.id)===Number(id));
+          return v && v.status === 'released';
+        });
+      }
+
+      function statusSelectHTML(kind, row){
+        if(!row) return '';
+        if(kind === 'version'){
+          const cur = row.status || 'dev';
+          return `
+            <select class="select" data-statuspick="version:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+              <option value="dev" ${cur==='dev'?'selected':''}>开发中</option>
+              <option value="testing" ${cur==='testing'?'selected':''}>测试中</option>
+              <option value="submitted" ${cur==='submitted'?'selected':''}>已提审</option>
+              <option value="released" ${cur==='released'?'selected':''}>已发布</option>
+            </select>
+          `;
+        }
+        if(kind === 'milestone'){
+          const cur = msStatusToTaskStatus(row.status || 'plan');
+          const opts = ['ns','prog','block','done'];
+          return `
+            <select class="select" data-statuspick="milestone:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+              ${opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('')}
+            </select>
+          `;
+        }
+        if(kind === 'ops'){
+          const cur = row.status || 'plan';
+          return `
+            <select class="select" data-statuspick="ops:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+              <option value="plan" ${cur==='plan'?'selected':''}>计划中</option>
+              <option value="prog" ${cur==='prog'?'selected':''}>进行中</option>
+              <option value="done" ${cur==='done'?'selected':''}>已完成</option>
+              <option value="pause" ${cur==='pause'?'selected':''}>暂停</option>
+            </select>
+          `;
+        }
+        // task / bug: ns/prog/block/done
+        const cur = row.status || 'ns';
+        const opts = ['ns','prog','block','done'];
+        return `
+          <select class="select" data-statuspick="${esc(kind)}:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+            ${opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('')}
+          </select>
+        `;
+      }
+
+      async function updateStatusByPick(kind, id, next){
+        const row = findRow(kind, id);
+        if(!row) return;
+        const before = structuredClone(row);
+        try{
+          if(kind === 'milestone'){
+            applyLocal(kind, id, { status: taskStatusToMsStatus(next) });
+            render();
+            await patchById('milestones','id', id, { status: taskStatusToMsStatus(next) });
+            toast('ok','已更新');
+            await refreshRemote();
+            return;
+          }
+          applyLocal(kind, id, { status: next });
+          render();
+          await patchById(kindToTable(kind), 'id', id, { status: next });
+          toast('ok','已更新');
+          saveLocalDraft();
+          await refreshRemote();
+        }catch(e){
+          console.warn(e);
+          // 回填原状态到下拉（通过 refresh/re-render），但前端保持 next 并进入队列
+          enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue:id, patch: { status: (kind==='milestone' ? taskStatusToMsStatus(next) : next) } });
+          saveLocalDraft();
+          toast('warn','已在前端更新，待同步后端');
+        }
+      }
 
       function versionBadge(status){
         const map = {
@@ -2155,45 +2259,7 @@
         app.board[listName] = (app.board[listName] || []).filter(x=>!(x && String(x.id)===String(id)));
       }
 
-      async function toggleStatus(kind, id){
-        const row = findRow(kind, id);
-        if(!row) return;
-        const before = structuredClone(row);
-        try{
-          if(kind==='version'){
-            const next = versionStatusCycle(row.status);
-            applyLocal(kind, row.id, { status: next });
-            render();
-            await patchById('versions','id',row.id,{ status: next });
-            toast('ok','已更新');
-            await refreshRemote();
-            return;
-          }
-          if(kind==='milestone'){
-            const cur = msStatusToTaskStatus(row.status);
-            const next = statusCycle(cur);
-            applyLocal(kind, row.id, { status: taskStatusToMsStatus(next) });
-            render();
-            await patchById('milestones','id',row.id,{ status: taskStatusToMsStatus(next) });
-            toast('ok','已更新');
-            await refreshRemote();
-            return;
-          }
-          const next = statusCycle(row.status);
-          applyLocal(kind, row.id, { status: next });
-          render();
-          await patchById(kindToTable(kind), 'id', row.id, { status: next });
-          toast('ok', '已更新');
-          saveLocalDraft();
-          await refreshRemote();
-        }catch(e){
-          console.warn(e);
-          // 保持前端变更不回滚，进入待同步队列
-          enqueue({ op:'patch', table: kindToTable(kind), idField:'id', idValue: row.id, patch: { status: (kind==='milestone' ? taskStatusToMsStatus(statusCycle(msStatusToTaskStatus(before.status))) : (kind==='version' ? versionStatusCycle(before.status) : statusCycle(before.status))) } });
-          saveLocalDraft();
-          toast('warn', '已在前端更新，待同步后端');
-        }
-      }
+      // 旧的“点击切状态”逻辑已废弃：改用下拉选择 updateStatusByPick
 
       function mergeCreatedIntoList(table, realId, created){
         const listName = table === 'tasks' ? 'tasks'
@@ -2761,7 +2827,8 @@
 
       function renderThisWeek(el){
         const tasks = (app.board.tasks || []).filter(t=>t && t.this_week && !t.is_archived);
-        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived);
+        // 本周不展示“上周已随发版结项”的 Bug（done 且关联 released 版本）
+        const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived && !(b.status==='done' && rowHasReleasedVersion(b)));
         const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
 
         const focusItems = [];
@@ -2788,7 +2855,7 @@
                       <span class="chip">${esc(mod)}</span>
                       <div class="focus-top-right">
                         ${platformTagsHtmlForFocus(it.kind, it.row)}
-                        <span class="badge ${b.cls}" data-toggle="${it.kind}:${esc(it.row.id)}">${esc(b.label)}</span>
+                        ${statusSelectHTML(it.kind, it.row)}
                       </div>
                     </div>
                     <div class="focus-name">${esc(name || '未命名')}</div>
@@ -2870,8 +2937,16 @@
           x.addEventListener('click', async (e)=>{
             e.stopPropagation();
             const [kind, id] = x.getAttribute('data-toggle').split(':');
-            await toggleStatus(kind, id);
+            // no-op: click-to-toggle removed
           });
+        });
+        el.querySelectorAll('[data-statuspick]').forEach(x=>{
+          x.addEventListener('change', async (e)=>{
+            e.stopPropagation();
+            const [kind, id] = x.getAttribute('data-statuspick').split(':');
+            await updateStatusByPick(kind, Number(id), x.value);
+          });
+          x.addEventListener('click', (e)=> e.stopPropagation());
         });
 
         $('addTaskBtn').addEventListener('click', ()=> openCreateModal('task'));
@@ -2983,7 +3058,9 @@
         }
         function listByVersion(vid){
           return {
-            t: tasks.filter(x=> linkedByVersion(x, vid)),
+            // 总览版本下只展示已完成结项的功能
+            t: tasks.filter(x=> linkedByVersion(x, vid) && x.status === 'done'),
+            // Bug/运营展示全部（含 done），用于回溯发版问题与验收
             b: bugs.filter(x=> linkedByVersion(x, vid)),
             o: ops.filter(x=> linkedByVersion(x, vid)),
           };
@@ -3205,7 +3282,7 @@
                         <span class="ms-date">${esc(d || '—')}</span>
                         <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
                       </div>
-                      <span class="badge ${b.cls}" data-toggle="milestone:${esc(m.id)}">${esc(b.label)}</span>
+                    ${statusSelectHTML('milestone', m)}
                     </div>
                   `;
                 }).join('')}
@@ -3272,13 +3349,7 @@
           });
           x.addEventListener('click', (e)=> e.stopPropagation());
         });
-        el.querySelectorAll('[data-toggle]').forEach(x=>{
-          x.addEventListener('click', async (e)=>{
-            e.stopPropagation();
-            const [kind, id] = x.getAttribute('data-toggle').split(':');
-            await toggleStatus(kind, id);
-          });
-        });
+        // no click-to-toggle badges in this view
       }
 
       function renderVersions(el){
@@ -3308,7 +3379,7 @@
                 <div class="version-card">
                   <div class="version-head" data-open="version:${esc(v.id)}">
                     <div class="version-num">${esc(v.version_num || '')}</div>
-                    <span class="badge ${b.cls}" data-toggle="version:${esc(v.id)}">${esc(b.label)}</span>
+                    ${statusSelectHTML('version', v)}
                     <span class="chip">${esc(platLabel(v.platform))}</span>
                     <span style="margin-left:auto;color:var(--text-secondary);font-size:12px;">${esc(v.target_date || '')}</span>
                     <button class="btn" type="button" data-addtaskfor="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;">+ 新增功能</button>
@@ -3321,7 +3392,7 @@
                         <div class="chk-row" data-open="task:${esc(t.id)}">
                           <span class="chk ${done?'done':''}">${done?'✓':''}</span>
                           <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
-                          <span class="badge ${tb.cls}" data-toggle="task:${esc(t.id)}">${esc(tb.label)}</span>
+                          ${statusSelectHTML('task', t)}
                         </div>
                       `;
                     }).join('') || `<div style="color:var(--text-secondary);padding:6px 8px;">暂无任务</div>`}
@@ -3347,12 +3418,14 @@
             openDrawerByKey(kind, id);
           });
         });
-        el.querySelectorAll('[data-toggle]').forEach(x=>{
-          x.addEventListener('click', async (e)=>{
+        el.querySelectorAll('[data-statuspick]').forEach(x=>{
+          x.addEventListener('change', async (e)=>{
             e.stopPropagation();
-            const [kind, id] = x.getAttribute('data-toggle').split(':');
-            await toggleStatus(kind, id);
+            const [kind, id] = x.getAttribute('data-statuspick').split(':');
+            const next = x.value;
+            await updateStatusByPick(kind, Number(id), kind==='milestone' ? next : next);
           });
+          x.addEventListener('click', (e)=> e.stopPropagation());
         });
         el.querySelectorAll('[data-addtaskfor]').forEach(x=>{
           x.addEventListener('click', (e)=>{
