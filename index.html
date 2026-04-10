@@ -303,6 +303,7 @@
       /* 全局状态色（与设计规范 tokens 对齐：primary/secondary/tertiary/danger/text-secondary） */
       .badge.ns{ background: rgba(46,47,58,0.8); color: var(--text-secondary); }
       .badge.prog{ background: rgba(249,189,34,0.15); color: var(--tertiary); }
+      .badge.test{ background: rgba(180,197,255,0.18); color: var(--primary); }
       .badge.block{ background: rgba(255,107,107,0.15); color: var(--danger); }
       .badge.done{ background: rgba(69,223,164,0.15); color: var(--secondary); }
       /* 版本状态需要更细颗粒度 */
@@ -320,6 +321,7 @@
       .select.status-pause{ color: var(--danger); background: rgba(255,107,107,0.10); }
       .select.status-dev{ color: var(--text-secondary); background: rgba(46,47,58,0.55); }
       .select.status-testing{ color: var(--primary); background: rgba(180,197,255,0.10); }
+      .select.status-test{ color: var(--primary); background: rgba(180,197,255,0.10); }
       .select.status-submitted{ color: var(--tertiary); background: rgba(249,189,34,0.10); }
       .select.status-released{ color: var(--secondary); background: rgba(69,223,164,0.10); }
       .select.status-not_started{ color: var(--text-secondary); background: rgba(46,47,58,0.55); }
@@ -510,6 +512,7 @@
         background: rgba(139,143,168,0.8);
       }
       .dot.prog{ background: rgba(249,189,34,0.9); }
+      .dot.test{ background: rgba(98,138,255,0.95); }
       .dot.done{ background: rgba(69,223,164,0.9); }
       .dot.block{ background: rgba(255,107,107,0.9); }
 
@@ -1910,16 +1913,16 @@
 
       function priRank(p){ return p==='p0'?0 : p==='p1'?1 : p==='p2'?2 : 3; }
       function priDotCls(p){ return p==='p0' ? 'high' : p==='p1' ? 'mid' : ''; }
-      function dotCls(s){ return s==='done'?'done' : s==='prog'?'prog' : s==='block'?'block' : ''; }
+      function dotCls(s){ return s==='done'?'done' : s==='prog'?'prog' : s==='test'?'test' : s==='block'?'block' : ''; }
 
       function statusCycle(s){
-        const order = ['ns','prog','block','done'];
+        const order = ['ns','prog','test','block','done'];
         const i = Math.max(0, order.indexOf(s));
         return order[(i + 1) % order.length];
       }
       function taskStatusBadge(s){
-        const cls = s==='done'?'done' : s==='prog'?'prog' : s==='block'?'block' : 'ns';
-        const label = s==='done'?'已完成' : s==='prog'?'进行中' : s==='block'?'阻塞' : '待开始';
+        const cls = s==='done'?'done' : s==='prog'?'prog' : s==='test'?'test' : s==='block'?'block' : 'ns';
+        const label = s==='done'?'已完成' : s==='prog'?'进行中' : s==='test'?'测试中' : s==='block'?'阻塞' : '待开始';
         return { cls, label };
       }
       function opsStatusBadge(s){
@@ -1990,9 +1993,9 @@
             </select>
           `;
         }
-        // task / bug: ns/prog/block/done
+        // task / bug: ns/prog/test/block/done
         const cur = row.status || 'ns';
-        const opts = ['ns','prog','block','done'];
+        const opts = ['ns','prog','test','block','done'];
         return `
           <select class="select status-${esc(cur)}" data-statuspick="${esc(kind)}:${esc(row.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
             ${opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('')}
@@ -2052,7 +2055,7 @@
       }
       function taskStatusToMsStatus(s){
         if(s==='done') return 'done';
-        if(s==='prog') return 'current';
+        if(s==='prog' || s==='test') return 'current';
         if(s==='block') return 'delay';
         return 'plan';
       }
@@ -2304,8 +2307,14 @@
           const labels = { plan:'计划中', prog:'进行中', done:'已完成', pause:'暂停' };
           return opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(labels[s] || s)}</option>`).join('');
         }
+        if(kind==='task' || kind==='bug'){
+          const opts = ['ns','prog','test','block','done'];
+          const cur = current || 'ns';
+          return opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('');
+        }
         const opts = ['ns','prog','block','done'];
-        return opts.map(s=>`<option value="${s}" ${s===current?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('');
+        const cur = current || 'ns';
+        return opts.map(s=>`<option value="${s}" ${s===cur?'selected':''}>${esc(taskStatusBadge(s).label)}</option>`).join('');
       }
 
       function renderDrawer(){
@@ -4101,7 +4110,7 @@
           if(sortKey === 'status'){
             const rank = (s)=>{
               if(kind === 'ops') return s==='prog'?0 : s==='plan'?1 : s==='pause'?2 : s==='done'?3 : 9;
-              return s==='block'?0 : s==='prog'?1 : s==='ns'?2 : s==='done'?3 : 9;
+              return s==='block'?0 : s==='prog'?1 : s==='test'?2 : s==='ns'?3 : s==='done'?4 : 9;
             };
             arr.sort((a,b)=> rank(a?.status) - rank(b?.status));
             return arr;
