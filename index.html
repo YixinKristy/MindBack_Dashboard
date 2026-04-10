@@ -220,7 +220,7 @@
         padding: 10px 8px;
         justify-content:center;
       }
-      .sidebar.collapsed .brand-dot{ width: 22px; height:22px; }
+      .sidebar.collapsed .brand-logo{ width: 22px; height: 22px; }
       .sidebar.collapsed .brand-name{ display:none; }
       .sidebar.collapsed .sidebar-toggle{ right: 6px; top: 6px; width: 28px; height: 28px; }
       .sidebar.collapsed .nav-item{ justify-content:center; gap: 0; padding: 10px 8px; }
@@ -256,13 +256,13 @@
         letter-spacing: 0.04em;
       }
       .sidebar-toggle:hover{ background-color: var(--surface-container-highest); color: var(--on-surface); transform: translateY(-1px); }
-      .brand-dot{
+      .brand-logo{
         width: 28px;
         height: 28px;
-        border-radius: 50%;
-        background-color: var(--primary);
-        box-shadow: var(--shadow-sm);
-        flex-shrink:0;
+        object-fit: contain;
+        flex-shrink: 0;
+        display: block;
+        border-radius: 6px;
       }
       .brand-name{
         font-family: var(--font-family);
@@ -1826,7 +1826,7 @@
     <div class="app">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-dot"></div>
+          <img class="brand-logo" src="assets/logo.png" width="28" height="28" alt="MindBack" />
           <div class="brand-name">MindBack</div>
           <button class="sidebar-toggle" id="sidebarToggle" type="button" title="收起目录">≪</button>
         </div>
@@ -2152,7 +2152,37 @@
         return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
       }
 
-      async function sbFetch(path, { method='GET', headers={}, body=null } = {}){
+      function readAuthCache(){
+        try{
+          const raw = localStorage.getItem('mindback_auth_v1');
+          return raw ? JSON.parse(raw) : null;
+        }catch(_e){
+          return null;
+        }
+      }
+
+      function isJwtExpiredMessage(msg){
+        const s = String(msg || '');
+        return /JWT expired|jwt expired|token expired|Invalid JWT|invalid jwt|session (?:expired|not found)/i.test(s);
+      }
+
+      /** 写入请求前：access将过期时用 refresh_token 换新，避免 PATCH/同步报 401 */
+      async function ensureAccessTokenFresh(){
+        if(!app.accessToken) return;
+        const auth = readAuthCache();
+        const rt = auth?.refresh_token;
+        if(!rt) return;
+        const exp = Number(auth?.expires_at || 0);
+        const skewMs = 120 * 1000;
+        if(exp && Date.now() < exp - skewMs) return;
+        try{
+          await refreshSession(rt);
+        }catch(e){
+          console.warn('ensureAccessTokenFresh: refresh failed', e);
+        }
+      }
+
+      async function sbFetch(path, { method='GET', headers={}, body=null, _retry=0 } = {}){
         const h = {
           apikey: SUPABASE_ANON_KEY,
           Authorization: 'Bearer ' + (app.accessToken || SUPABASE_ANON_KEY),
@@ -2168,6 +2198,19 @@
         try{ json = text ? JSON.parse(text) : null; }catch(_e){}
         if(!res.ok){
           const msg = (json && (json.message || json.error_description || json.error)) ? (json.message || json.error_description || json.error) : text;
+          const jwtExpired = res.status === 401 && app.accessToken && isJwtExpiredMessage(msg);
+          if(jwtExpired && _retry < 1){
+            const auth = readAuthCache();
+            const rt = auth?.refresh_token;
+            if(rt){
+              try{
+                await refreshSession(rt);
+                return await sbFetch(path, { method, headers, body, _retry: _retry + 1 });
+              }catch(_r){
+                console.warn('sbFetch: refresh after401 failed', _r);
+              }
+            }
+          }
           const err = new Error(msg || ('HTTP ' + res.status));
           err.status = res.status;
           err.payload = json || text;
@@ -2187,6 +2230,7 @@
           toast('warn', '未登录：变更已保留，待登录后同步');
           throw new Error('not_authenticated');
         }
+        await ensureAccessTokenFresh();
         const qs = `${encodeURIComponent(idField)}=eq.${encodeURIComponent(String(idValue))}`;
         const path = `/rest/v1/${encodeURIComponent(table)}?${qs}`;
         return await sbFetch(path, {
@@ -2201,6 +2245,7 @@
           toast('warn', '未登录：新增已保留，待登录后同步');
           throw new Error('not_authenticated');
         }
+        await ensureAccessTokenFresh();
         const path = `/rest/v1/${encodeURIComponent(table)}`;
         return await sbFetch(path, {
           method:'POST',
@@ -2214,6 +2259,7 @@
           toast('warn', '未登录：删除已保留，待登录后同步');
           throw new Error('not_authenticated');
         }
+        await ensureAccessTokenFresh();
         const qs = `${encodeURIComponent(idField)}=eq.${encodeURIComponent(String(idValue))}`;
         const path = `/rest/v1/${encodeURIComponent(table)}?${qs}`;
         return await sbFetch(path, {
@@ -2363,6 +2409,36 @@
         }).join('');
       }
 
+      function backlogPlatformsFromVersions(row){
+        if(!row) return [];
+        const plats = [];
+        if(row.version_ios_id) plats.push('ios');
+        if(row.version_android_id) plats.push('android');
+        if(row.version_web_id) plats.push('web');
+        if(plats.length) return plats;
+        return Array.isArray(row.platforms) ? row.platforms : [];
+      }
+
+      function formatBacklogVersionHint(row){
+        if(!row) return '';
+        const parts = [];
+        const pushVid = (vid)=>{
+          if(vid==null || vid==='') return;
+          const v = (app.board?.versions || []).find(x=>x && Number(x.id) === Number(vid));
+          if(!v) return;
+          const plat = v.platform === 'ios' ? 'iOS' : v.platform === 'android' ? '安卓' : 'Web';
+          const num = (v.version_num || '').trim();
+          parts.push(num ? `${plat} ${num}` : plat);
+        };
+        pushVid(row.version_ios_id);
+        pushVid(row.version_android_id);
+        pushVid(row.version_web_id);
+        if(!parts.length) pushVid(row.version_id);
+        return parts.join(' · ');
+      }
+      function backlogItemKindLabel(k){
+        return k==='bug' ? 'Bug' : k==='ops' ? '运营' : '功能';
+      }
       function formatVersionForFocus(kind, row){
         if(kind !== 'task' || row == null) return '—';
         const parts = [];
@@ -2614,6 +2690,7 @@
           openLogin();
           return;
         }
+        await ensureAccessTokenFresh();
         let processed = 0;
         while(app.syncQueue.length > 0){
           const op = app.syncQueue[0];
@@ -2860,12 +2937,13 @@
         const dueValue = kind==='task' ? (row.due_date || '')
           : kind==='bug' ? (row.due_date || '')
           : kind==='ops' ? (row.target_date || '')
+          : kind==='backlog' ? (row.due_date || '')
           : '';
         const noteValue = kind==='version' ? (row.release_notes || '') : (row.note || '');
         const versionInternalNotes = kind==='version' ? (row.notes || '') : '';
         const moduleValue = row.module || '';
         const ownersValue = Array.isArray(row.owners) ? row.owners.join(',') : '';
-        const dueLabel = kind==='ops' ? '目标日期' : '截止日期';
+        const dueLabel = kind==='ops' ? '目标日期' : kind==='backlog' ? '计划日期/周' : '截止日期';
         const phaseThemeValue = kind==='phase' ? (row.theme || '') : '';
         const phaseRangeValue = kind==='phase' ? (row.month_range || '') : '';
         const phaseDescValue = kind==='phase' ? (row.description || '') : '';
@@ -2904,6 +2982,24 @@
               <div>${esc(row.slug)}</div>
             </div>
           ` : ''}
+          ${kind==='backlog' ? `
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="field">
+              <div class="label">规划类型</div>
+              <select class="select" id="f_item_kind">
+                <option value="task" ${(row.item_kind||'task')==='task'?'selected':''}>功能（转入任务）</option>
+                <option value="bug" ${row.item_kind==='bug'?'selected':''}>Bug</option>
+                <option value="ops" ${row.item_kind==='ops'?'selected':''}>运营</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="label">优先级</div>
+              <select class="select" id="f_priority">
+                ${['p0','p1','p2','p3'].map(p=>`<option value="${p}" ${p===priorityValue?'selected':''}>${p.toUpperCase()}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          ` : `
           <div style="display:${kind==='phase'?'none':'grid'};grid-template-columns:1fr 1fr;gap:12px;">
             <div class="field">
               <div class="label">状态</div>
@@ -2918,7 +3014,7 @@
                   <option value="web" ${row.platform==='web'?'selected':''}>Web</option>
                 </select>
               </div>
-            ` : (kind==='task' || kind==='backlog') ? `
+            ` : kind==='task' ? `
               <div class="field">
                 <div class="label">优先级</div>
                 <select class="select" id="f_priority">
@@ -2927,8 +3023,9 @@
               </div>
             ` : `<div></div>`}
           </div>
+          `}
 
-          ${(kind==='task' || kind==='bug') ? `
+          ${(kind==='task' || kind==='bug' || kind==='backlog') ? `
             <div class="field">
               <div class="label">${dueLabel}</div>
               <input class="input" id="f_due" value="${esc(dueValue)}" placeholder="点击选择日期或范围…" readonly />
@@ -2971,7 +3068,18 @@
             </div>
           ` : ''}
 
-          ${(kind==='task' || kind==='bug' || kind==='ops') ? `
+          ${kind==='backlog' ? `
+            <div class="field">
+              <div class="label">来源</div>
+              <select class="select" id="f_source">
+                <option value="internal" ${(row.source||'internal')==='internal'?'selected':''}>内部</option>
+                <option value="user" ${row.source==='user'?'selected':''}>用户</option>
+                <option value="campaign" ${row.source==='campaign'?'selected':''}>活动</option>
+              </select>
+            </div>
+          ` : ''}
+
+          ${(kind==='task' || kind==='bug' || kind==='ops' || kind==='backlog') ? `
             <div class="field">
               <div class="label">关联版本 · iOS</div>
               <select class="select" id="f_v_ios">${versionSelectOptions('ios', row.version_ios_id)}</select>
@@ -3102,7 +3210,7 @@
             });
           }
         }
-        if(kind==='ops' || kind==='task' || kind==='bug'){
+        if(kind==='ops' || kind==='task' || kind==='bug' || kind==='backlog'){
           const t = $('f_due');
           if(t){
             t.addEventListener('click', ()=>{
@@ -3159,12 +3267,13 @@
               .map(s=>s.trim())
               .filter(Boolean)
             : null;
-          const versBundle = (kind === 'task' || kind === 'bug' || kind === 'ops')
+          const versBundle = (kind === 'task' || kind === 'bug' || kind === 'ops' || kind === 'backlog')
             ? taskVersionBundleFromSelects('f_v_ios', 'f_v_android', 'f_v_web')
             : null;
           const thisWeekTask = kind === 'task' && $('f_this_week') ? ($('f_this_week').value === 'true') : null;
           const taskTypeVal = kind === 'task' && $('f_task_type') ? $('f_task_type').value : null;
-          const sourceVal = kind === 'task' && $('f_source') ? $('f_source').value : null;
+          const sourceVal = (kind === 'task' || kind === 'backlog') && $('f_source') ? $('f_source').value : null;
+          const itemKindVal = kind === 'backlog' && $('f_item_kind') ? $('f_item_kind').value : null;
           const milestoneVal = kind === 'task' && $('f_milestone') ? String($('f_milestone').value || '').trim() : null;
           const isArchivedVal = kind === 'task' && $('f_archived') ? ($('f_archived').value === 'true') : null;
           const platformVal = kind === 'version' && $('f_platform') ? $('f_platform').value : null;
@@ -3233,7 +3342,21 @@
               is_archived: isArchivedVal,
             });
           }else if(kind==='backlog'){
-            applyLocal(kind, row.id, { name, priority, note, module });
+            applyLocal(kind, row.id, {
+              name,
+              priority,
+              note,
+              module,
+              item_kind: itemKindVal || row.item_kind || 'task',
+              source: sourceVal || row.source || 'internal',
+              due_date: due,
+              owners: owners || [],
+              version_ios_id: versBundle.version_ios_id,
+              version_android_id: versBundle.version_android_id,
+              version_web_id: versBundle.version_web_id,
+              version_id: versBundle.version_id,
+              platforms: versBundle.platforms,
+            });
           }
           render();
 
@@ -3316,6 +3439,15 @@
             patch.priority = priority;
             patch.note = note;
             patch.module = module;
+            if(itemKindVal) patch.item_kind = itemKindVal;
+            if(sourceVal) patch.source = sourceVal;
+            patch.due_date = due;
+            patch.owners = owners || [];
+            patch.version_ios_id = versBundle.version_ios_id;
+            patch.version_android_id = versBundle.version_android_id;
+            patch.version_web_id = versBundle.version_web_id;
+            patch.version_id = versBundle.version_id;
+            patch.platforms = versBundle.platforms;
           }
 
           try{
@@ -3636,20 +3768,59 @@
         }
         if(kind === 'backlog'){
           const pid = app.backlogPhase || app.board?.currentPhase?.id || 1;
+          const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
           return `
             <div class="field">
               <div class="label">名称</div>
               <input class="input" id="c_name" placeholder="Backlog 标题" />
             </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="field">
+                <div class="label">规划类型</div>
+                <select class="select" id="c_item_kind">
+                  <option value="task" selected>功能（转入任务）</option>
+                  <option value="bug">Bug</option>
+                  <option value="ops">运营</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="label">优先级</div>
+                <select class="select" id="c_priority">
+                  ${['p0','p1','p2','p3'].map(p=>`<option value="${p}" ${p==='p2'?'selected':''}>${p.toUpperCase()}</option>`).join('')}
+                </select>
+              </div>
+            </div>
             <div class="field">
-              <div class="label">优先级</div>
-              <select class="select" id="c_priority">
-                ${['p0','p1','p2','p3'].map(p=>`<option value="${p}" ${p==='p2'?'selected':''}>${p.toUpperCase()}</option>`).join('')}
-              </select>
+              <div class="label">计划日期/周</div>
+              <input class="input" id="c_due" value="" placeholder="点击选择日期或范围…" readonly />
             </div>
             <div class="field">
               <div class="label">模块</div>
               <input class="input" id="c_module" />
+            </div>
+            <div class="field">
+              <div class="label">来源</div>
+              <select class="select" id="c_source">
+                <option value="internal" selected>内部</option>
+                <option value="user">用户</option>
+                <option value="campaign">活动</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · iOS</div>
+              <select class="select" id="c_v_ios">${versionSelectOptions('ios', sel('ios'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · 安卓</div>
+              <select class="select" id="c_v_android">${versionSelectOptions('android', sel('android'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">关联版本 · Web</div>
+              <select class="select" id="c_v_web">${versionSelectOptions('web', sel('web'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">负责人</div>
+              <input class="input" id="c_owners" placeholder="逗号分隔多人" />
             </div>
             <input type="hidden" id="c_phase_id" value="${esc(String(pid))}" />
             <div class="field">
@@ -3681,6 +3852,25 @@
             t.addEventListener('click', ()=> openDateOrRangePicker('c_target'));
           }
         }
+        if(kind==='backlog'){
+          const t = $('c_due');
+          if(t){
+            t.readOnly = true;
+            t.placeholder = '点击选择日期或范围…';
+            t.addEventListener('click', ()=> openDateOrRangePicker('c_due'));
+          }
+        }
+        ['ios','android','web'].forEach(p=>{
+          const id = p==='ios' ? 'c_v_ios' : p==='android' ? 'c_v_android' : 'c_v_web';
+          const el = $(id);
+          if(!el) return;
+          el.addEventListener('change', ()=>{
+            if(el.value === '__new__'){
+              app.pendingVersionPick = { elId: id, platform: p };
+              openCreateModalWithDefaults('version', { platform: p });
+            }
+          });
+        });
         setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
       }
 
@@ -3702,6 +3892,14 @@
             t.readOnly = true;
             t.placeholder = '点击选择日期或范围…';
             t.addEventListener('click', ()=> openDateOrRangePicker('c_target'));
+          }
+        }
+        if(kind==='backlog'){
+          const t = $('c_due');
+          if(t){
+            t.readOnly = true;
+            t.placeholder = '点击选择日期或范围…';
+            t.addEventListener('click', ()=> openDateOrRangePicker('c_due'));
           }
         }
         setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
@@ -4036,14 +4234,22 @@
           if(kind === 'backlog'){
             const pidRaw = ($('c_phase_id') && $('c_phase_id').value) || String(app.backlogPhase || app.board.currentPhase?.id || 1);
             const pid = Number(pidRaw);
+            const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
               name,
               priority: $('c_priority').value,
               phase_id: Number.isFinite(pid) ? pid : pidRaw,
-              platforms: [],
+              platforms: tv.platforms,
               module: ($('c_module') && $('c_module').value.trim()) || '',
               note: ($('c_note') && $('c_note').value) || '',
-              source: 'internal',
+              source: ($('c_source') && $('c_source').value) || 'internal',
+              item_kind: ($('c_item_kind') && $('c_item_kind').value) || 'task',
+              due_date: ($('c_due') && $('c_due').value.trim()) || '',
+              owners: ($('c_owners') && $('c_owners').value.split(',').map(s=>s.trim()).filter(Boolean)) || [],
+              version_ios_id: tv.version_ios_id,
+              version_android_id: tv.version_android_id,
+              version_web_id: tv.version_web_id,
+              version_id: tv.version_id,
               is_archived: false,
             };
             const tmpId = -Math.floor(Math.random() * 1e9);
@@ -4079,25 +4285,109 @@
       async function moveBacklogToThisWeek(){
         const { row } = app.drawer;
         if(!row) return;
+        const ik = row.item_kind || 'task';
+        const owners = Array.isArray(row.owners) ? row.owners : [];
+        const plats = backlogPlatformsFromVersions(row);
+        const vIos = row.version_ios_id ?? null;
+        const vAnd = row.version_android_id ?? null;
+        const vWeb = row.version_web_id ?? null;
+        const vId = row.version_id ?? null;
+        const due = row.due_date || '';
+        const note = row.note || '';
+        const mod = row.module || '';
+        const src = row.source || 'internal';
         try{
-          const inserted = await insertRow('tasks', {
-            name: row.name || '来自 Backlog',
-            status: 'ns',
-            priority: row.priority || 'p2',
-            platforms: row.platforms || [],
-            source: row.source || 'internal',
-            note: row.note || '',
-            this_week: true,
-            moved_from_backlog_id: row.id,
-            module: row.module || '',
-            due_date: '',
-            is_focus: false,
-          });
-          const newTask = inserted?.[0];
-          if(newTask?.id){
-            try{ await patchById('backlog','id',row.id,{ moved_to_task_id: newTask.id }); }catch(_e){}
+          let created = null;
+          if(ik === 'bug'){
+            const bugSrc = src === 'user' ? 'user' : 'internal';
+            const ins = await insertRow('bugs', {
+              name: row.name || '来自 Backlog',
+              status: 'ns',
+              severity: 's1',
+              platforms: plats,
+              owners,
+              source: bugSrc,
+              note,
+              module: mod || 'Bug',
+              due_date: due,
+              is_focus: false,
+              is_archived: false,
+              version_ios_id: vIos,
+              version_android_id: vAnd,
+              version_web_id: vWeb,
+              version_id: vId,
+            });
+            created = ins?.[0];
+            if(created?.id){
+              try{
+                await patchById('backlog','id',row.id,{
+                  is_archived: true,
+                  moved_to_bug_id: created.id,
+                });
+              }catch(_e){}
+            }
+          }else if(ik === 'ops'){
+            const ins = await insertRow('ops_actions', {
+              name: row.name || '来自 Backlog',
+              status: 'plan',
+              category: 'campaign',
+              target_date: due,
+              channel: '',
+              owners,
+              note,
+              is_focus: false,
+              is_archived: false,
+              version_ios_id: vIos,
+              version_android_id: vAnd,
+              version_web_id: vWeb,
+              version_id: vId,
+            });
+            created = ins?.[0];
+            if(created?.id){
+              try{
+                await patchById('backlog','id',row.id,{
+                  is_archived: true,
+                  moved_to_ops_id: created.id,
+                });
+              }catch(_e){}
+            }
+          }else{
+            const ins = await insertRow('tasks', {
+              name: row.name || '来自 Backlog',
+              status: 'ns',
+              priority: row.priority || 'p2',
+              platforms: plats,
+              source: src,
+              note,
+              this_week: true,
+              moved_from_backlog_id: row.id,
+              module: mod,
+              due_date: due,
+              is_focus: false,
+              owners,
+              version_ios_id: vIos,
+              version_android_id: vAnd,
+              version_web_id: vWeb,
+              version_id: vId,
+            });
+            created = ins?.[0];
+            if(created?.id){
+              try{
+                await patchById('backlog','id',row.id,{
+                  is_archived: true,
+                  moved_to_task_id: created.id,
+                });
+              }catch(_e){}
+            }
           }
-          toast('ok','已移入本周');
+          if(!created?.id){
+            toast('bad','创建失败');
+            return;
+          }
+          const okMsg = ik === 'task' ? '已移入本周任务并归档 Backlog'
+            : ik === 'bug' ? '已转为 Bug 并归档 Backlog'
+            : '已转为运营项并归档 Backlog';
+          toast('ok', okMsg);
           await refreshRemote();
           closeDrawer();
         }catch(e){
@@ -4120,7 +4410,13 @@
             source: row.source || 'internal',
             phase_id: pid,
             is_archived: false,
-            moved_to_task_id: row.id,
+            item_kind: 'task',
+            due_date: row.due_date || '',
+            owners: Array.isArray(row.owners) ? row.owners : [],
+            version_ios_id: row.version_ios_id ?? null,
+            version_android_id: row.version_android_id ?? null,
+            version_web_id: row.version_web_id ?? null,
+            version_id: row.version_id ?? null,
           });
           try{ await patchById('tasks','id',row.id,{ this_week: false }); }catch(_e){}
           toast('ok','已移至 Backlog');
@@ -5627,14 +5923,18 @@
               const pd = priDotCls(x.priority);
               const mod = x.module || '—';
               const phase = phases.find(p=>p.id=== (x.phase_id || app.backlogPhase));
+              const kindLab = backlogItemKindLabel(x.item_kind || 'task');
+              const verHint = formatBacklogVersionHint(x);
+              const platStr = (backlogPlatformsFromVersions(x).slice(0,3).join('/') || (x.platforms||[]).slice(0,2).join('/')).toUpperCase();
               return `
                 <div class="bl-row" data-open="backlog:${esc(x.id)}">
                   <span class="pri-dot ${esc(pd)}"></span>
                   <span class="bl-name">${esc(x.name || '未命名')}</span>
                   <div class="bl-tags">
+                    <span class="tag">${esc(kindLab)}</span>
                     <span class="tag">${esc(mod)}</span>
                     <span class="tag">${esc(phase ? (phase.name || '') : '阶段')}</span>
-                    <span class="tag">${esc((x.platforms||[]).slice(0,2).join('/').toUpperCase() || '—')}</span>
+                    <span class="tag">${esc(verHint || platStr || '—')}</span>
                   </div>
                 </div>
               `;
