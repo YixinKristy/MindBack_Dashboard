@@ -709,16 +709,20 @@
         background: var(--surface);
         border-radius: var(--radius-lg);
         padding: 24px;
+        height: 100%;
+        display:flex;
+        flex-direction:column;
+        min-height:0;
       }
       .overview-panel-title{
         display:flex;
         align-items:center;
         justify-content:flex-end;
         margin: -2px 0 12px;
-        font-size: 14px;
+        font-size: 15px;
         font-weight: 950;
         letter-spacing: 0.05em;
-        color:#dce4ff;
+        color:#b9c9ff;
         text-shadow: 0 0 18px rgba(180,197,255,0.14);
         white-space: normal;
         word-break: break-word;
@@ -794,6 +798,8 @@
         display:flex;
         flex-direction:column;
         gap: 8px;
+        flex: 1;
+        min-height: 0;
       }
       .ms-row{
         display:flex;
@@ -831,11 +837,23 @@
         opacity: .65;
       }
 
-      .ver-stack{
+      .ver-panel{
         grid-area: versions;
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        height: 100%;
         display:flex;
         flex-direction:column;
         gap: 12px;
+        min-height:0;
+      }
+      .ver-stack{
+        display:flex;
+        flex-direction:column;
+        gap: 12px;
+        flex: 1;
+        min-height: 0;
       }
       .ver-mini{
         background: var(--surface-raised);
@@ -4447,8 +4465,9 @@
               </div>
             </div>
 
-            <div class="ver-stack">
+            <div class="ver-panel">
               <div class="overview-panel-title">版本详情</div>
+              <div class="ver-stack">
               ${shallowWeekVers.length ? `
                 <div class="ver-group">
                   <div class="ver-group-head" data-vgroup="thisweek">
@@ -4497,6 +4516,7 @@
               ${(!shallowWeekVers.length && !pastVersList.length && !nextWeekVersList.length && !otherVersList.length) ? `
                 <div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无可展示的版本内容</div>
               ` : ``}
+              </div>
             </div>
 
             <div class="phase-card">
