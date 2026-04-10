@@ -523,7 +523,6 @@
         grid-template-areas:
           "phasebar phasebar"
           "kpi kpi"
-          "twver twver"
           "milestones versions";
         gap: 12px;
       }
@@ -560,27 +559,6 @@
         letter-spacing:0.04em;
         color:#b4c5ff;
         word-break:break-all;
-      }
-      .overview-tw-ver-section{
-        grid-area: twver;
-      }
-      .overview-tw-ver-head{
-        font-size:12px;
-        color:var(--text-secondary);
-        margin-bottom:10px;
-        font-weight:850;
-        letter-spacing:0.04em;
-      }
-      .ver-mini--hero{
-        padding: 18px 20px;
-        margin-bottom:12px;
-      }
-      .ver-mini--hero:last-child{ margin-bottom:0; }
-      .ver-num--hero{
-        font-size: 26px;
-        font-weight: 800;
-        letter-spacing: 0.03em;
-        font-family: var(--font-display);
       }
       .kpi-stack{ grid-area: kpi; }
       .kpi-row{
@@ -4296,31 +4274,7 @@
             </div>
           `;
         }
-        function verCardShallow(v){
-          const plat = v.platform==='ios'?'📱 iOS' : v.platform==='android'?'🤖 Android' : '🕸 Web';
-          const { t, b, o } = listByVersion(v.id);
-          const cnt = `${t.length} 功能 · ${b.length} Bug · ${o.length} 运营`;
-          return `
-            <div class="ver-mini ver-mini--hero" data-vid="${esc(v.id)}">
-              <div class="ver-top" style="align-items:flex-start;">
-                <div style="min-width:0;">
-                  <div class="ver-num ver-num--hero" data-open="version:${esc(v.id)}">${esc(v.version_num || '')}</div>
-                  <div class="ver-plat">${esc(plat)} · ${esc(versionWeekRangeLabel(v) || '—')}</div>
-                  <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">${esc(cnt)}</div>
-                </div>
-                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
-                  <select class="select" data-ovvstatus="${esc(v.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
-                    <option value="not_started" ${v.status==='not_started'?'selected':''}>未开始</option>
-                    <option value="dev" ${v.status==='dev'?'selected':''}>开发中</option>
-                    <option value="testing" ${v.status==='testing'?'selected':''}>测试中</option>
-                    <option value="submitted" ${v.status==='submitted'?'selected':''}>已提审</option>
-                    <option value="released" ${v.status==='released'?'selected':''}>已发布</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          `;
-        }
+        const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
 
         el.innerHTML = `
           <div class="overview-wrap">
@@ -4408,12 +4362,16 @@
               </div>
             </div>
 
-            <div class="overview-tw-ver-section">
-              <div class="overview-tw-ver-head">本周版本</div>
-              ${shallowWeekVers.length ? shallowWeekVers.map(v=> verCardShallow(v)).join('') : `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">本周暂无已绑定周次的版本</div>`}
-            </div>
-
             <div class="ver-stack">
+              ${shallowWeekVers.length ? `
+                <div class="ver-group">
+                  <div class="ver-group-head" data-vgroup="thisweek">
+                    <div class="ver-group-title">${esc(weekRangeStr)}</div>
+                    <div class="ver-group-meta"></div>
+                  </div>
+                  ${shallowWeekVers.map(v=> verCard(v)).join('')}
+                </div>
+              ` : ``}
               ${pastVersList.length ? `
                 <div class="ver-group">
                   <div class="ver-group-head" data-vgroup="past">
@@ -4450,7 +4408,7 @@
                 </div>
               ` : ``}
 
-              ${(!pastVersList.length && !nextWeekVersList.length && !otherVersList.length) ? `
+              ${(!shallowWeekVers.length && !pastVersList.length && !nextWeekVersList.length && !otherVersList.length) ? `
                 <div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无可展示的版本内容</div>
               ` : ``}
             </div>
