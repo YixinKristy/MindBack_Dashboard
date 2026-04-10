@@ -590,28 +590,59 @@
       .kpi-badge.released{ color:#45dfa4; background: rgba(69,223,164,0.15); }
       .kpi-badge.none{ color: rgba(195,198,215,0.40); background: transparent; }
       .kpi-risk-bg{ background: rgba(255,107,107,0.05) !important; }
-      .kpi-risk-list{ margin-top: 12px; display:flex; flex-direction:column; gap: 8px; }
-      .kpi-risk-item{
-        min-height: 44px;
-        display:flex;
-        align-items:flex-start;
-        gap: 10px;
-        padding: 10px 10px;
+      .kpi-risk-summary-line{
+        margin-top: 10px;
+        font-family: var(--font-display);
+        font-size: 18px;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+        line-height: 1.35;
+      }
+      .kpi-risk-detail-wrap{ margin-top: 14px; display:flex; flex-direction:column; gap: 10px; }
+      .kpi-risk-detail{
+        position:relative;
+        padding: 12px 14px 14px;
         border-radius: 12px;
         background: rgba(37,39,49,0.55);
-        cursor:pointer;
+        cursor: pointer;
+        transition: background .15s ease;
       }
-      .kpi-risk-item:hover{ background: rgba(37,39,49,0.85); }
-      .kpi-risk-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+      .kpi-risk-detail:hover{ background: rgba(37,39,49,0.85); }
+      .kpi-risk-detail-tag{
+        position:absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1;
+      }
+      .kpi-risk-detail-tag .kpi-src{ display:inline-block; }
+      .kpi-risk-detail-body{
+        padding-right: 76px;
+        min-width:0;
+        display:flex;
+        flex-direction:column;
+        gap: 6px;
+      }
       .kpi-risk-name{ font-size: 14px; font-weight: 700; color:#e2e4f0; line-height:1.35; word-break:break-word; }
       .kpi-risk-note{ font-size: 12px; font-weight: 600; color:#c3c6d7; line-height:1.35; word-break:break-word; }
+      .kpi-risk-detail-own{
+        margin-top: 4px;
+        font-size: 11px;
+        color:#c3c6d7;
+        letter-spacing: .03em;
+      }
+      .kpi-risk-more-hint{
+        font-size: 11px;
+        color:#c3c6d7;
+        letter-spacing: .03em;
+        padding: 2px 2px 0;
+      }
+      .kpi-risk-more-hint--dim{ opacity: .75; }
+      .kpi-card[data-ovcard="risk"][data-ovrisk-expandable="1"]{ cursor: pointer; }
+      .kpi-card[data-ovcard="risk"][data-ovrisk-expandable="0"]{ cursor: default; }
       .kpi-src{ font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 900; border-radius: 999px; padding: 6px 10px; line-height:1; }
       .kpi-src.task{ color:#b4c5ff; background: rgba(180,197,255,0.15); }
       .kpi-src.bug{ color:#ff6b6b; background: rgba(255,107,107,0.12); }
       .kpi-src.ops{ color:#f9bd22; background: rgba(249,189,34,0.12); }
-      .kpi-risk-desc{ flex:1; min-width:0; font-size: 14px; color:#e2e4f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .kpi-risk-own{ font-size: 11px; color:#c3c6d7; letter-spacing: .03em; flex-shrink:0; padding-top:2px; }
-
       .phase-card{
         grid-area: milestones;
         background: var(--surface);
@@ -1466,6 +1497,7 @@
         pendingVersionPick: null, // { elId, platform }
         sidebarCollapsed: false,
         datePicker: { open:false, targetId:null },
+        overviewRiskShowAll: false, // 总览「本周风险」多条时，点击卡片展开全部
       };
 
       const TABS = [
@@ -3751,7 +3783,10 @@
           x.addEventListener('click', (e)=>{
             const t = x.getAttribute('data-ovcard');
             if(t === 'risk'){
-              // 风险明细已在卡片内直接展示，点击卡片不再折叠/展开
+              if(x.getAttribute('data-ovrisk-expandable') === '1'){
+                app.overviewRiskShowAll = !app.overviewRiskShowAll;
+                render();
+              }
               return;
             }
             if(t === 'ms'){
@@ -3953,7 +3988,17 @@
         const riskBugs = bugs.filter(b=>b && b.is_risk);
         const riskOps = ops.filter(o=>o && o.is_risk);
         const riskCount = riskTasks.length + riskBugs.length + riskOps.length;
-        const riskSummary = `功能 ${riskTasks.length}条 · Bug ${riskBugs.length}条 · 运营 ${riskOps.length}条`;
+        const riskSummaryParts = [];
+        if(riskTasks.length) riskSummaryParts.push(`${riskTasks.length} 功能`);
+        if(riskBugs.length) riskSummaryParts.push(`${riskBugs.length} Bug`);
+        if(riskOps.length) riskSummaryParts.push(`${riskOps.length} 运营`);
+        const riskSummary = riskSummaryParts.join(' · ');
+        const riskItems = [
+          ...riskTasks.map(r=>({ kind:'task', row:r })),
+          ...riskBugs.map(r=>({ kind:'bug', row:r })),
+          ...riskOps.map(r=>({ kind:'ops', row:r })),
+        ];
+        if(riskCount <= 1) app.overviewRiskShowAll = false;
         const riskTone = riskCount===0 ? 'secondary' : (riskCount<=2 ? 'tertiary' : 'error');
         const riskStrip = riskCount===0 ? 'strip-secondary' : 'strip-error';
         // 进度条暂用现有占位（后续可改为 phase 内真实进度）
@@ -4242,39 +4287,34 @@
                   </div>
                 </div>
 
-                <div class="kpi-card ${riskStrip} ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk">
+                <div class="kpi-card ${riskStrip} ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk" data-ovrisk-expandable="${riskCount>1?'1':'0'}">
                   <div class="kpi-title">本周风险</div>
                   ${riskCount===0 ? `
                     <div class="kpi-body-md kpi-secondary" style="margin-top:14px;">暂无风险</div>
                   ` : `
-                    <div class="kpi-headline ${riskTone==='secondary'?'kpi-secondary':riskTone==='tertiary'?'kpi-tertiary':'kpi-error'}" style="margin-top:10px;">${riskCount}</div>
-                    <div class="kpi-h" style="margin-top:6px;letter-spacing:0.03em;text-transform:none;opacity:.95;">${esc(riskSummary)}</div>
-                  `}
-                  ${riskCount>0 ? `
-                    <div class="kpi-risk-list">
-                      ${[
-                        ...riskTasks.map(r=>({ kind:'task', row:r })),
-                        ...riskBugs.map(r=>({ kind:'bug', row:r })),
-                        ...riskOps.map(r=>({ kind:'ops', row:r })),
-                      ].slice(0,6).map(it=>{
+                    <div class="kpi-risk-summary-line ${riskTone==='secondary'?'kpi-secondary':riskTone==='tertiary'?'kpi-tertiary':'kpi-error'}">${esc(riskSummary)}</div>
+                    <div class="kpi-risk-detail-wrap">
+                      ${(app.overviewRiskShowAll ? riskItems : riskItems.slice(0,1)).map(it=>{
                         const srcCls = it.kind==='task'?'task':it.kind==='bug'?'bug':'ops';
                         const srcLab = it.kind==='task'?'功能':it.kind==='bug'?'Bug':'运营';
                         const own = formatOwnersDisplay(it.row);
                         const nm = (it.row.name || it.row.title || '未命名').trim();
                         const note = (it.row.risk_note || '').trim();
                         return `
-                          <div class="kpi-risk-item" data-ovrisk="${esc(it.kind)}:${esc(it.row.id)}">
-                            <span class="kpi-src ${srcCls}">${esc(srcLab)}</span>
-                            <div class="kpi-risk-body">
+                          <div class="kpi-risk-detail" data-ovrisk="${esc(it.kind)}:${esc(it.row.id)}">
+                            <div class="kpi-risk-detail-tag"><span class="kpi-src ${srcCls}">${esc(srcLab)}</span></div>
+                            <div class="kpi-risk-detail-body">
                               <div class="kpi-risk-name">${esc(nm)}</div>
                               ${note ? `<div class="kpi-risk-note">${esc(note)}</div>` : ``}
+                              ${own ? `<div class="kpi-risk-detail-own">${esc(own)}</div>` : ``}
                             </div>
-                            <div class="kpi-risk-own">${esc(own)}</div>
                           </div>
                         `;
                       }).join('')}
+                      ${!app.overviewRiskShowAll && riskCount>1 ? `<div class="kpi-risk-more-hint">还有 ${riskCount-1} 项风险，点击空白处展开查看全部</div>` : ``}
+                      ${app.overviewRiskShowAll && riskCount>1 ? `<div class="kpi-risk-more-hint kpi-risk-more-hint--dim">点击空白处收起列表</div>` : ``}
                     </div>
-                  ` : ``}
+                  `}
                 </div>
               </div>
             </div>
