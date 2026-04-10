@@ -45,7 +45,6 @@
 
         --gradient-hero-pink:        linear-gradient(135deg, #a7295a 0%, #ffc1d0 100%);
         --gradient-hero-teal:        linear-gradient(135deg, #006570 0%, #6debfd 100%);
-        --gradient-primary-btn:      linear-gradient(135deg, #254cd8 0%, #dce3ff 100%);
 
         --radius-xs:                 0.25rem;
         --radius-sm:                 0.5rem;
@@ -385,12 +384,13 @@
       .btn:active{ transform: scale(0.98); }
       .btn:disabled{ opacity: 0.4; cursor: not-allowed; pointer-events: none; }
       .btn.primary{
-        background: var(--gradient-primary-btn);
+        background-color: var(--primary);
         color: var(--on-primary);
-        box-shadow: 0px 4px 16px color-mix(in srgb, var(--primary) 25%, transparent);
+        box-shadow: 0px 3px 12px color-mix(in srgb, var(--primary) 28%, transparent);
       }
       .btn.primary:hover{
-        box-shadow: 0px 8px 24px color-mix(in srgb, var(--primary) 35%, transparent);
+        background-color: color-mix(in srgb, var(--primary) 90%, var(--on-primary) 10%);
+        box-shadow: 0px 6px 18px color-mix(in srgb, var(--primary) 32%, transparent);
         transform: translateY(-1px);
       }
       .btn.ghost{
@@ -1252,45 +1252,36 @@
       .versions-page{
         display:flex;
         flex-direction:column;
-        gap: var(--space-5);
+        gap: var(--space-4);
       }
-      .versions-filter-section{
+      .versions-toolbar-row{
         display:flex;
-        flex-direction:column;
-        gap: var(--space-2);
-      }
-      .versions-filter-heading{
-        display:flex;
-        align-items:baseline;
+        align-items:center;
         justify-content:space-between;
         gap: var(--space-3);
         flex-wrap:wrap;
       }
-      .versions-filter-title{
-        font-size: 0.6875rem;
-        font-weight: 700;
-        letter-spacing: 0.07em;
-        text-transform: uppercase;
-        color: var(--on-surface-variant);
-      }
-      .versions-filter-current{
-        font-size: 0.8125rem;
-        color: var(--on-surface-variant);
-      }
-      .versions-filter-section .pill-tabs{
-        margin-bottom: 0;
-      }
-      .versions-filter-relation{
-        margin: 0;
-        max-width: 40rem;
-        font-size: 0.75rem;
-        line-height: 1.5;
-        color: var(--on-surface-variant);
-        opacity: 0.92;
-      }
-      .versions-primary-action{
+      .versions-page .pill-tabs--compact{
         display:flex;
-        justify-content:flex-end;
+        flex-wrap:wrap;
+        align-items:center;
+        gap: 6px;
+        margin:0;
+        flex:1;
+        min-width:0;
+      }
+      .versions-page .pill-tabs--compact .pill-tab{
+        padding: 5px 12px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        border-radius: 999px;
+      }
+      .versions-page .versions-add-btn{
+        height: 34px;
+        padding: 0 var(--space-4);
+        font-size: 0.8125rem;
+        flex-shrink:0;
       }
       .versions-list-section{
         display:flex;
@@ -1357,11 +1348,8 @@
       }
       .version-task-grid{
         display:grid;
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: var(--space-4);
-      }
-      @media (min-width: 768px){
-        .version-task-grid{ grid-template-columns: 1fr 1fr; }
       }
       .version-module{
         background: color-mix(in srgb, var(--surface-container-lowest) 92%, var(--surface) 8%);
@@ -5122,6 +5110,7 @@
         const versions = (app.board.versions || []).filter(v=>v && v.platform===app.versionsPlatform);
         const tasks = (app.board.tasks || []).filter(t=>t && !t.is_archived);
         const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived);
+        const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
         const now = new Date();
 
         const weekRangeForVersion = (v)=>{
@@ -5145,18 +5134,11 @@
 
         el.innerHTML = `
           <div class="versions-page">
-            <section class="versions-filter-section" aria-label="按平台筛选版本列表">
-              <div class="versions-filter-heading">
-                <span class="versions-filter-title">平台筛选</span>
-                <span class="versions-filter-current">当前：${esc(platLabel(app.versionsPlatform))}</span>
-              </div>
-              <div class="pill-tabs">
+            <div class="versions-toolbar-row" aria-label="平台筛选与新增">
+              <div class="pill-tabs pill-tabs--compact">
                 ${plats.map(p=>`<div class="pill-tab ${p===app.versionsPlatform?'active':''}" data-plat="${p}">${platLabel(p)}</div>`).join('')}
               </div>
-              <p class="versions-filter-relation">以下「版本列表」仅展示所选平台下的版本卡片；切换平台会立即筛选下方列表，不会改动任何版本数据。</p>
-            </section>
-            <div class="versions-primary-action">
-              <button class="btn primary" id="addVersionBtn" type="button">+ 新增版本</button>
+              <button class="btn primary versions-add-btn" id="addVersionBtn" type="button">+ 新增版本</button>
             </div>
             <section class="versions-list-section" aria-label="版本卡片列表">
               <div class="versions-list-heading" id="versionsListHeading">${esc(platLabel(app.versionsPlatform))} 版本 <span class="count">· ${versions.length} 个</span></div>
@@ -5174,6 +5156,63 @@
               const vNew = vTasks.filter(t=> (t.task_type || 'task') === 'task');
               const vFix = vTasks.filter(t=> (t.task_type || 'task') !== 'task');
               const vBugs = bugs.filter(bg=> linkedByVersion(bg, v.id));
+              const vOps = ops.filter(o=> linkedByVersion(o, v.id));
+              const bugFixCount = vFix.length + vBugs.length;
+              const modNew = vNew.length ? `
+                      <div class="version-module">
+                        <div class="version-module-title">新功能（${vNew.length}）</div>
+                        ${vNew.map(t=>{
+                          const done = t.status==='done';
+                          return `
+                              <div class="chk-row" data-open="task:${esc(t.id)}">
+                                <span class="chk ${done?'done':''}">${done?'✓':''}</span>
+                                <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
+                                ${statusSelectHTML('task', t)}
+                              </div>
+                            `;
+                        }).join('')}
+                      </div>` : '';
+              const modBug = bugFixCount ? `
+                      <div class="version-module">
+                        <div class="version-module-title">Bug 修复（${bugFixCount}）</div>
+                        ${vFix.map(t=>{
+                          const done = t.status==='done';
+                          return `
+                              <div class="chk-row" data-open="task:${esc(t.id)}">
+                                <span class="chk ${done?'done':''}">${done?'✓':''}</span>
+                                <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
+                                ${statusSelectHTML('task', t)}
+                              </div>
+                            `;
+                        }).join('')}
+                        ${vBugs.map(bg=>{
+                          return `
+                              <div class="chk-row" data-open="bug:${esc(bg.id)}">
+                                <span class="chk ${bg.status==='done'?'done':''}">${bg.status==='done'?'✓':''}</span>
+                                <span class="chk-name ${bg.status==='done'?'done':''}">${esc(bg.name || '未命名')}</span>
+                                ${statusSelectHTML('bug', bg)}
+                              </div>
+                            `;
+                        }).join('')}
+                      </div>` : '';
+              const modOps = vOps.length ? `
+                      <div class="version-module">
+                        <div class="version-module-title">运营活动（${vOps.length}）</div>
+                        ${vOps.map(o=>{
+                          const done = o.status==='done';
+                          return `
+                              <div class="chk-row" data-open="ops:${esc(o.id)}">
+                                <span class="chk ${done?'done':''}">${done?'✓':''}</span>
+                                <span class="chk-name ${done?'done':''}">${esc(o.name || '未命名')}</span>
+                                ${statusSelectHTML('ops', o)}
+                              </div>
+                            `;
+                        }).join('')}
+                      </div>` : '';
+              const modJoined = [modNew, modBug, modOps].filter(Boolean).join('');
+              const versionGridInner = modJoined
+                ? `<div class="version-task-grid">${modJoined}</div>`
+                : `<div class="version-task-grid"><div class="version-module"><div class="version-module-empty">暂无关联功能、Bug 或运营活动</div></div></div>`;
               return `
                 <div class="version-card">
                   <div class="version-head">
@@ -5187,50 +5226,7 @@
                     </div>
                   </div>
                   <div class="version-tasks" style="display:${expanded?'block':'none'};">
-                    <div class="version-task-grid">
-                      <div class="version-module">
-                        <div class="version-module-title">新功能（${vNew.length}）</div>
-                        ${(()=>{
-                          const rows = vNew.map(t=>{
-                            const done = t.status==='done';
-                            return `
-                              <div class="chk-row" data-open="task:${esc(t.id)}">
-                                <span class="chk ${done?'done':''}">${done?'✓':''}</span>
-                                <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
-                                ${statusSelectHTML('task', t)}
-                              </div>
-                            `;
-                          }).join('');
-                          return rows || `<div class="version-module-empty">暂无新功能</div>`;
-                        })()}
-                      </div>
-                      <div class="version-module">
-                        <div class="version-module-title">Bug 修复（${vFix.length + vBugs.length}）</div>
-                        ${(()=>{
-                          const fixPart = vFix.map(t=>{
-                            const done = t.status==='done';
-                            return `
-                              <div class="chk-row" data-open="task:${esc(t.id)}">
-                                <span class="chk ${done?'done':''}">${done?'✓':''}</span>
-                                <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
-                                ${statusSelectHTML('task', t)}
-                              </div>
-                            `;
-                          }).join('');
-                          const bugPart = vBugs.map(bg=>{
-                            return `
-                              <div class="chk-row" data-open="bug:${esc(bg.id)}">
-                                <span class="chk ${bg.status==='done'?'done':''}">${bg.status==='done'?'✓':''}</span>
-                                <span class="chk-name ${bg.status==='done'?'done':''}">${esc(bg.name || '未命名')}</span>
-                                ${statusSelectHTML('bug', bg)}
-                              </div>
-                            `;
-                          }).join('');
-                          const all = fixPart + bugPart;
-                          return all || `<div class="version-module-empty">暂无 Bug 修复</div>`;
-                        })()}
-                      </div>
-                    </div>
+                    ${versionGridInner}
                   </div>
                 </div>
               `;
