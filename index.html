@@ -592,22 +592,25 @@
       .kpi-risk-bg{ background: rgba(255,107,107,0.05) !important; }
       .kpi-risk-list{ margin-top: 12px; display:flex; flex-direction:column; gap: 8px; }
       .kpi-risk-item{
-        height: 44px;
+        min-height: 44px;
         display:flex;
-        align-items:center;
+        align-items:flex-start;
         gap: 10px;
-        padding: 0 10px;
+        padding: 10px 10px;
         border-radius: 12px;
         background: rgba(37,39,49,0.55);
         cursor:pointer;
       }
       .kpi-risk-item:hover{ background: rgba(37,39,49,0.85); }
+      .kpi-risk-body{ flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+      .kpi-risk-name{ font-size: 14px; font-weight: 700; color:#e2e4f0; line-height:1.35; word-break:break-word; }
+      .kpi-risk-note{ font-size: 12px; font-weight: 600; color:#c3c6d7; line-height:1.35; word-break:break-word; }
       .kpi-src{ font-size: 11px; letter-spacing: .05em; text-transform: uppercase; font-weight: 900; border-radius: 999px; padding: 6px 10px; line-height:1; }
       .kpi-src.task{ color:#b4c5ff; background: rgba(180,197,255,0.15); }
       .kpi-src.bug{ color:#ff6b6b; background: rgba(255,107,107,0.12); }
       .kpi-src.ops{ color:#f9bd22; background: rgba(249,189,34,0.12); }
       .kpi-risk-desc{ flex:1; min-width:0; font-size: 14px; color:#e2e4f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .kpi-risk-own{ font-size: 11px; color:#c3c6d7; letter-spacing: .03em; flex-shrink:0; }
+      .kpi-risk-own{ font-size: 11px; color:#c3c6d7; letter-spacing: .03em; flex-shrink:0; padding-top:2px; }
 
       .phase-card{
         grid-area: milestones;
@@ -3748,8 +3751,7 @@
           x.addEventListener('click', (e)=>{
             const t = x.getAttribute('data-ovcard');
             if(t === 'risk'){
-              app.overviewRiskOpen = !app.overviewRiskOpen;
-              render();
+              // 风险明细已在卡片内直接展示，点击卡片不再折叠/展开
               return;
             }
             if(t === 'ms'){
@@ -3954,8 +3956,6 @@
         const riskSummary = `功能 ${riskTasks.length}条 · Bug ${riskBugs.length}条 · 运营 ${riskOps.length}条`;
         const riskTone = riskCount===0 ? 'secondary' : (riskCount<=2 ? 'tertiary' : 'error');
         const riskStrip = riskCount===0 ? 'strip-secondary' : 'strip-error';
-        const riskOpen = !!app.overviewRiskOpen;
-
         // 进度条暂用现有占位（后续可改为 phase 内真实进度）
         const pTotal = 30;
         const pNow = Math.min(pTotal, 12);
@@ -4243,14 +4243,14 @@
                 </div>
 
                 <div class="kpi-card ${riskStrip} ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk">
-                  <div class="kpi-title">本周预警</div>
+                  <div class="kpi-title">本周风险</div>
                   ${riskCount===0 ? `
                     <div class="kpi-body-md kpi-secondary" style="margin-top:14px;">暂无风险</div>
                   ` : `
                     <div class="kpi-headline ${riskTone==='secondary'?'kpi-secondary':riskTone==='tertiary'?'kpi-tertiary':'kpi-error'}" style="margin-top:10px;">${riskCount}</div>
                     <div class="kpi-h" style="margin-top:6px;letter-spacing:0.03em;text-transform:none;opacity:.95;">${esc(riskSummary)}</div>
                   `}
-                  ${riskCount>0 && riskOpen ? `
+                  ${riskCount>0 ? `
                     <div class="kpi-risk-list">
                       ${[
                         ...riskTasks.map(r=>({ kind:'task', row:r })),
@@ -4258,12 +4258,17 @@
                         ...riskOps.map(r=>({ kind:'ops', row:r })),
                       ].slice(0,6).map(it=>{
                         const srcCls = it.kind==='task'?'task':it.kind==='bug'?'bug':'ops';
-                        const srcLab = it.kind==='task'?'功能':it.kind==='bug'?'BUG':'运营';
+                        const srcLab = it.kind==='task'?'功能':it.kind==='bug'?'Bug':'运营';
                         const own = formatOwnersDisplay(it.row);
+                        const nm = (it.row.name || it.row.title || '未命名').trim();
+                        const note = (it.row.risk_note || '').trim();
                         return `
                           <div class="kpi-risk-item" data-ovrisk="${esc(it.kind)}:${esc(it.row.id)}">
                             <span class="kpi-src ${srcCls}">${esc(srcLab)}</span>
-                            <div class="kpi-risk-desc">${esc((it.row.risk_note || '').trim() || it.row.name || it.row.title || '未命名')}</div>
+                            <div class="kpi-risk-body">
+                              <div class="kpi-risk-name">${esc(nm)}</div>
+                              ${note ? `<div class="kpi-risk-note">${esc(note)}</div>` : ``}
+                            </div>
                             <div class="kpi-risk-own">${esc(own)}</div>
                           </div>
                         `;
