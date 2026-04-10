@@ -532,6 +532,10 @@
         border-radius: var(--radius-lg);
         padding: 16px 20px;
       }
+      .overview-phase-bar[data-ovmonthsum="1"]{ cursor:pointer; }
+      .overview-phase-bar[data-ovmonthsum="1"]:hover{
+        outline: 1px solid rgba(180,197,255,0.35);
+      }
       .overview-phase-bar-head{
         display:flex;
         align-items:center;
@@ -553,12 +557,11 @@
         white-space:nowrap;
       }
       .overview-phase-bar-track{
-        font-family: ui-monospace, Menlo, monospace;
         font-size:13px;
         line-height:1.4;
-        letter-spacing:0.04em;
+        font-weight:800;
+        letter-spacing:0.02em;
         color:#b4c5ff;
-        word-break:break-all;
       }
       .kpi-stack{ grid-area: kpi; }
       .kpi-row{
@@ -2343,6 +2346,7 @@
           : kind==='bug' ? '编辑 Bug'
           : kind==='ops' ? '编辑运营动作'
           : kind==='phase' ? '编辑阶段'
+          : kind==='monthsum' ? '本月关联事项'
           : kind==='milestone' ? '编辑里程碑'
           : kind==='version' ? '编辑版本'
           : kind==='backlog' ? '编辑 Backlog'
@@ -2351,6 +2355,7 @@
       function rowTitle(kind, row){
         if(kind==='milestone') return row.title || '—';
         if(kind==='version') return row.version_num || '—';
+        if(kind==='monthsum') return row.name || '本月关联事项';
         return row.name || '—';
       }
 
@@ -2383,6 +2388,55 @@
 
         const body = $('drawerBody');
         const foot = $('drawerFoot');
+
+        if(kind === 'monthsum'){
+          const t = Array.isArray(row.tasks) ? row.tasks : [];
+          const b = Array.isArray(row.bugs) ? row.bugs : [];
+          const o = Array.isArray(row.ops) ? row.ops : [];
+          const renderList = (kind, list, cls)=>{
+            if(!list.length) return `<div style="color:var(--text-secondary);font-size:12px;">暂无</div>`;
+            return list.map(r=>{
+              const nm = (r.name || r.title || '未命名').trim();
+              const sub = (kind==='ops') ? formatDateOrRange(r.target_date || '') : (r.due_date || '');
+              const badge = (kind==='ops') ? opsStatusBadge(r.status) : taskStatusBadge(r.status);
+              const dotStatus = (kind==='ops')
+                ? (r.status==='prog'?'prog' : r.status==='done'?'done' : r.status==='pause'?'block' : 'ns')
+                : (r.status || 'ns');
+              return `
+                <div class="row-item ${cls}" data-open="${kind}:${esc(r.id)}" style="margin-bottom:8px;">
+                  <div class="row-name">${esc(nm)}</div>
+                  ${sub ? `<div style="color:var(--text-secondary);font-size:12px;margin-top:2px;">${esc(sub)}</div>` : ``}
+                  <div class="dot ${esc(dotCls(dotStatus))}"></div>
+                </div>
+              `;
+            }).join('');
+          };
+          body.innerHTML = `
+            <div style="color:var(--text-secondary);font-size:12px;margin-bottom:12px;">
+              按当前阶段里程碑日期范围聚合（重叠即计入）
+            </div>
+            <div style="margin-bottom:14px;">
+              <div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">功能（${t.length}）</div>
+              ${renderList('task', t, 'dev')}
+            </div>
+            <div style="margin-bottom:14px;">
+              <div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">Bug（${b.length}）</div>
+              ${renderList('bug', b, 'bug')}
+            </div>
+            <div style="margin-bottom:0;">
+              <div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">运营（${o.length}）</div>
+              ${renderList('ops', o, 'ops')}
+            </div>
+          `;
+          foot.innerHTML = '';
+          body.querySelectorAll('[data-open]').forEach(x=>{
+            x.addEventListener('click', ()=>{
+              const [k, id] = x.getAttribute('data-open').split(':');
+              openDrawerByKey(k, id);
+            });
+          });
+          return;
+        }
 
         const nameValue = kind==='milestone' ? (row.title || '')
           : kind==='phase' ? (row.name || '')
@@ -3981,9 +4035,7 @@
           .slice();
         const phaseMsTotal = msInCurrentPhase.length;
         const phaseMsDone = msInCurrentPhase.filter(m=>m && m.status==='done').length;
-        const phaseBarSegs = 12;
-        const phaseBarFilled = phaseMsTotal ? Math.min(phaseBarSegs, Math.round(phaseMsDone / phaseMsTotal * phaseBarSegs)) : 0;
-        const phaseBarStr = '█'.repeat(phaseBarFilled) + '░'.repeat(Math.max(0, phaseBarSegs - phaseBarFilled));
+        const phasePct = phaseMsTotal ? Math.round(phaseMsDone / phaseMsTotal * 100) : 0;
         const phaseBarHeadTitle = phaseTitle.replace(/·/g,' · ');
 
         const weekDateOfVersion = (v)=>{
@@ -4107,6 +4159,26 @@
             return rangesOverlap(start, end, msS, msE);
           };
           return tasks.filter(matchOverlap).length + bugs.filter(matchOverlap).length + ops.filter(matchOverlap).length;
+        })();
+
+        const monthSummary = (()=>{
+          const ranges = msInCurrentPhase.map(m=>{
+            const { start, end } = parseRangeYmd(m?.date_full || m?.date_short || '');
+            if(!start || !end) return null;
+            return { start, end };
+          }).filter(Boolean);
+          const matchAny = (row)=>{
+            if(!ranges.length) return false;
+            const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
+            const { start, end } = parseRangeYmd(raw);
+            if(!start || !end) return false;
+            return ranges.some(r=> rangesOverlap(start, end, r.start, r.end));
+          };
+          const t = tasks.filter(matchAny);
+          const b = bugs.filter(matchAny);
+          const o = ops.filter(matchAny);
+          const uniqById = (arr)=> Array.from(new Map(arr.map(x=>[String(x.id), x])).values());
+          return { t: uniqById(t), b: uniqById(b), o: uniqById(o) };
         })();
 
         const weekStartTimeOf = (v)=>{
@@ -4278,12 +4350,12 @@
 
         el.innerHTML = `
           <div class="overview-wrap">
-            <div class="overview-phase-bar">
+            <div class="overview-phase-bar" data-ovmonthsum="1" role="button" tabindex="0" title="查看本月关联事项">
               <div class="overview-phase-bar-head">
                 <div class="overview-phase-bar-title">${esc(phaseBarHeadTitle)}</div>
                 <div class="overview-phase-bar-meta">${phaseMsDone} / ${phaseMsTotal} 里程碑已完成</div>
               </div>
-              <div class="overview-phase-bar-track">${esc(phaseBarStr)}</div>
+              <div class="overview-phase-bar-track">${phasePct}%</div>
             </div>
             <div class="kpi-stack">
               <div class="kpi-row">
@@ -4595,6 +4667,24 @@
             app.activeTab = 'versions';
             render();
             openDrawerByKey('version', vid);
+          });
+        });
+        el.querySelectorAll('[data-ovmonthsum]').forEach(x=>{
+          const go = ()=>{
+            app.activeTab = 'milestones';
+            render();
+            openDrawer('monthsum', {
+              name: phaseBarHeadTitle || '本月关联事项',
+              tasks: monthSummary.t,
+              bugs: monthSummary.b,
+              ops: monthSummary.o,
+            });
+          };
+          x.addEventListener('click', (e)=>{ e.stopPropagation(); go(); });
+          x.addEventListener('keydown', (e)=>{
+            if(e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            go();
           });
         });
         el.querySelectorAll('[data-ovrisk]').forEach(x=>{
