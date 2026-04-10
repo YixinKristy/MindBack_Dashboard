@@ -540,7 +540,27 @@
         transition: transform .15s ease, outline-color .15s ease, background .15s ease;
         outline: 1px solid rgba(195,198,215,0);
         min-height: 156px;
+        display:flex;
+        flex-direction:column;
       }
+      .kpi-card-main{ flex:1; min-height:0; }
+      .kpi-card-more{
+        margin-top: 14px;
+        text-align: right;
+        flex-shrink:0;
+      }
+      .kpi-more-link{
+        display:inline-block;
+        font-size: 14px;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+        color: #b4c5ff;
+        cursor: pointer;
+        border-bottom: 1px solid rgba(180,197,255,0.35);
+        padding-bottom: 1px;
+        user-select:none;
+      }
+      .kpi-more-link:hover{ color:#d2dcff; border-bottom-color: rgba(180,197,255,0.55); }
       .kpi-card::before{
         content:'';
         position:absolute;
@@ -1501,6 +1521,7 @@
         sidebarCollapsed: false,
         datePicker: { open:false, targetId:null },
         overviewRiskShowAll: false, // 总览「本周风险」多条时，点击卡片展开全部
+        thisWeekRiskOnly: false,    // 「本周」仅展示 is_risk 项
       };
 
       const TABS = [
@@ -2093,7 +2114,9 @@
         }).join('');
         el.querySelectorAll('[data-tab]').forEach(btn=>{
           btn.addEventListener('click', ()=>{
-            app.activeTab = btn.getAttribute('data-tab');
+            const next = btn.getAttribute('data-tab');
+            if(next !== 'thisweek') app.thisWeekRiskOnly = false;
+            app.activeTab = next;
             render();
           });
         });
@@ -3614,10 +3637,19 @@
         const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived && inThisWeekByRange(b.due_date || '') && !(b.status==='done' && rowHasReleasedVersion(b)));
         const ops = (app.board.ops || []).filter(o=>o && !o.is_archived && inThisWeekByRange(o.target_date || ''));
 
+        let tasksTw = tasks;
+        let bugsTw = bugs;
+        let opsTw = ops;
+        if(app.thisWeekRiskOnly){
+          tasksTw = tasks.filter(t=>t && t.is_risk);
+          bugsTw = bugs.filter(b=>b && b.is_risk);
+          opsTw = ops.filter(o=>o && o.is_risk);
+        }
+
         const focusItems = [];
-        tasks.filter(t=>t.is_focus).forEach(t=> focusItems.push({ kind:'task', row:t, module: t.module || '功能开发' }));
-        bugs.filter(b=>b.is_focus).forEach(b=> focusItems.push({ kind:'bug', row:b, module: b.module || 'Bug' }));
-        ops.filter(o=>o.is_focus).forEach(o=> focusItems.push({ kind:'ops', row:o, module: o.category || '运营' }));
+        tasksTw.filter(t=>t.is_focus).forEach(t=> focusItems.push({ kind:'task', row:t, module: t.module || '功能开发' }));
+        bugsTw.filter(b=>b.is_focus).forEach(b=> focusItems.push({ kind:'bug', row:b, module: b.module || 'Bug' }));
+        opsTw.filter(o=>o.is_focus).forEach(o=> focusItems.push({ kind:'ops', row:o, module: o.category || '运营' }));
         const focus = focusItems;
 
         app.thisWeekSort = app.thisWeekSort || { task:'manual', bug:'manual', ops:'manual' };
@@ -3658,11 +3690,17 @@
           arr.sort((a,b)=> manualRank(a) - manualRank(b) || Number(a.id)-Number(b.id));
           return arr;
         };
-        const devList = sortListTw('task', tasks);
-        const bugList = sortListTw('bug', bugs);
-        const opsList = sortListTw('ops', ops);
+        const devList = sortListTw('task', tasksTw);
+        const bugList = sortListTw('bug', bugsTw);
+        const opsList = sortListTw('ops', opsTw);
 
         el.innerHTML = `
+          <div class="tw-topbar" style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+            <label class="tw-risk-filter" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:650;color:var(--text-secondary);user-select:none;">
+              <input type="checkbox" data-twriskonly ${app.thisWeekRiskOnly?'checked':''} style="width:16px;height:16px;accent-color:#628aff;"/>
+              <span>仅显示风险项</span>
+            </label>
+          </div>
           <div class="section">
             <div class="kicker">本周重点</div>
             <div class="focus-grid">
@@ -3769,6 +3807,13 @@
             openDrawerByKey(kind, id);
           });
         });
+        el.querySelectorAll('[data-twriskonly]').forEach(x=>{
+          x.addEventListener('change', ()=>{
+            app.thisWeekRiskOnly = !!x.checked;
+            render();
+          });
+          x.addEventListener('click', (e)=> e.stopPropagation());
+        });
         el.querySelectorAll('[data-toggle]').forEach(x=>{
           x.addEventListener('click', async (e)=>{
             e.stopPropagation();
@@ -3785,50 +3830,6 @@
             await updateStatusByPick(kind, Number(id), x.value);
           });
           x.addEventListener('click', (e)=> e.stopPropagation());
-        });
-
-        // Top cards behaviors
-        el.querySelectorAll('[data-ovcard]').forEach(x=>{
-          x.addEventListener('click', (e)=>{
-            const t = x.getAttribute('data-ovcard');
-            if(t === 'risk'){
-              if(x.getAttribute('data-ovrisk-expandable') === '1'){
-                app.overviewRiskShowAll = !app.overviewRiskShowAll;
-                render();
-              }
-              return;
-            }
-            if(t === 'ms'){
-              app.activeTab = 'milestones';
-              render();
-              if(keyMs?.id) openDrawerByKey('milestone', keyMs.id);
-              return;
-            }
-            if(t === 'release'){
-              app.activeTab = 'versions';
-              render();
-              return;
-            }
-          });
-        });
-        el.querySelectorAll('[data-ovver]').forEach(x=>{
-          x.addEventListener('click', (e)=>{
-            e.stopPropagation();
-            const vid = x.getAttribute('data-ovver');
-            if(!vid) return;
-            app.activeTab = 'versions';
-            render();
-            openDrawerByKey('version', vid);
-          });
-        });
-        el.querySelectorAll('[data-ovrisk]').forEach(x=>{
-          x.addEventListener('click', (e)=>{
-            e.stopPropagation();
-            const [k, id] = x.getAttribute('data-ovrisk').split(':');
-            app.activeTab = 'thisweek';
-            render();
-            openDrawerByKey(k, id);
-          });
         });
 
         // ThisWeek sort dropdowns
@@ -4267,63 +4268,78 @@
             <div class="kpi-stack">
               <div class="kpi-row">
                 <div class="kpi-card strip-primary" data-ovcard="ms">
-                  <div class="kpi-title">${esc(monthTitle)}</div>
-                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(monthGoalText || '—')}</div>
-                  <div class="kpi-gap16"></div>
-                  <div class="kpi-title">${esc(weekRangeZh)}阶段目标</div>
-                  <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(weekGoalText || '—')}</div>
+                  <div class="kpi-card-main">
+                    <div class="kpi-title">${esc(monthTitle)}</div>
+                    <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(monthGoalText || '—')}</div>
+                    <div class="kpi-gap16"></div>
+                    <div class="kpi-title">${esc(weekRangeZh)}阶段目标</div>
+                    <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(weekGoalText || '—')}</div>
+                  </div>
+                  <div class="kpi-card-more">
+                    <span class="kpi-more-link" data-ovjump="milestones" role="button" tabindex="0">更多目标</span>
+                  </div>
                 </div>
 
                 <div class="kpi-card strip-secondary" data-ovcard="release">
-                  <div class="kpi-title">本周各端发布版本</div>
-                  <div class="kpi-col">
-                    ${['ios','android','web'].map(p=>{
-                      const v = thisWeekByPlat[p];
-                      if(!v) return '';
-                      const pLab = p==='ios'?'iOS' : p==='android'?'Android' : 'Web';
-                      const num = (v.version_num || '').trim();
-                      if(!num) return '';
-                      const st = (v.status || 'dev');
-                      const badgeCls = st==='released'?'released' : st==='submitted'?'submitted' : st==='dev'?'dev' : st==='testing'?'dev' : st==='not_started'?'none' : 'none';
-                      const stLab = st==='released'?'已发布' : st==='submitted'?'提审中' : st==='dev'?'开发中' : st==='testing'?'测试中' : st==='not_started'?'未开始' : '—';
-                      return `
-                        <div class="kpi-line" data-ovver="${v ? esc(v.id) : ''}" data-ovplat="${p}">
-                          <div class="kpi-body-md" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(pLab)} ${esc(num)}</div>
-                          <span class="kpi-badge ${badgeCls}">${esc(stLab)}</span>
-                        </div>
-                      `;
-                    }).filter(Boolean).join('') || `<div class="kpi-body-md kpi-muted" style="margin-top:8px;">本周无发布</div>`}
+                  <div class="kpi-card-main">
+                    <div class="kpi-title">本周各端发布版本</div>
+                    <div class="kpi-col">
+                      ${['ios','android','web'].map(p=>{
+                        const v = thisWeekByPlat[p];
+                        if(!v) return '';
+                        const pLab = p==='ios'?'iOS' : p==='android'?'Android' : 'Web';
+                        const num = (v.version_num || '').trim();
+                        if(!num) return '';
+                        const st = (v.status || 'dev');
+                        const badgeCls = st==='released'?'released' : st==='submitted'?'submitted' : st==='dev'?'dev' : st==='testing'?'dev' : st==='not_started'?'none' : 'none';
+                        const stLab = st==='released'?'已发布' : st==='submitted'?'提审中' : st==='dev'?'开发中' : st==='testing'?'测试中' : st==='not_started'?'未开始' : '—';
+                        return `
+                          <div class="kpi-line" data-ovver="${v ? esc(v.id) : ''}" data-ovplat="${p}">
+                            <div class="kpi-body-md" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(pLab)} ${esc(num)}</div>
+                            <span class="kpi-badge ${badgeCls}">${esc(stLab)}</span>
+                          </div>
+                        `;
+                      }).filter(Boolean).join('') || `<div class="kpi-body-md kpi-muted" style="margin-top:8px;">本周无发布</div>`}
+                    </div>
+                  </div>
+                  <div class="kpi-card-more">
+                    <span class="kpi-more-link" data-ovjump="versions" role="button" tabindex="0">更多版本详情</span>
                   </div>
                 </div>
 
                 <div class="kpi-card ${riskStrip} ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk" data-ovrisk-expandable="${riskCount>1?'1':'0'}">
-                  <div class="kpi-title">本周风险</div>
-                  ${riskCount===0 ? `
-                    <div class="kpi-body-md kpi-secondary" style="margin-top:14px;">暂无风险</div>
-                  ` : `
-                    <div class="kpi-risk-summary-line ${riskTone==='secondary'?'kpi-secondary':riskTone==='tertiary'?'kpi-tertiary':'kpi-error'}">${esc(riskSummary)}</div>
-                    <div class="kpi-risk-detail-wrap">
-                      ${(app.overviewRiskShowAll ? riskItems : riskItems.slice(0,1)).map(it=>{
-                        const srcCls = it.kind==='task'?'task':it.kind==='bug'?'bug':'ops';
-                        const srcLab = it.kind==='task'?'功能':it.kind==='bug'?'Bug':'运营';
-                        const own = formatOwnersDisplay(it.row);
-                        const nm = (it.row.name || it.row.title || '未命名').trim();
-                        const note = (it.row.risk_note || '').trim();
-                        return `
-                          <div class="kpi-risk-detail" data-ovrisk="${esc(it.kind)}:${esc(it.row.id)}">
-                            <div class="kpi-risk-detail-tag"><span class="kpi-src ${srcCls}">${esc(srcLab)}</span></div>
-                            <div class="kpi-risk-detail-body">
-                              <div class="kpi-risk-name">${esc(nm)}</div>
-                              ${note ? `<div class="kpi-risk-note">${esc(note)}</div>` : ``}
-                              ${own ? `<div class="kpi-risk-detail-own">${esc(own)}</div>` : ``}
+                  <div class="kpi-card-main">
+                    <div class="kpi-title">本周风险</div>
+                    ${riskCount===0 ? `
+                      <div class="kpi-body-md kpi-secondary" style="margin-top:14px;">暂无风险</div>
+                    ` : `
+                      <div class="kpi-risk-summary-line ${riskTone==='secondary'?'kpi-secondary':riskTone==='tertiary'?'kpi-tertiary':'kpi-error'}">${esc(riskSummary)}</div>
+                      <div class="kpi-risk-detail-wrap">
+                        ${(app.overviewRiskShowAll ? riskItems : riskItems.slice(0,1)).map(it=>{
+                          const srcCls = it.kind==='task'?'task':it.kind==='bug'?'bug':'ops';
+                          const srcLab = it.kind==='task'?'功能':it.kind==='bug'?'Bug':'运营';
+                          const own = formatOwnersDisplay(it.row);
+                          const nm = (it.row.name || it.row.title || '未命名').trim();
+                          const note = (it.row.risk_note || '').trim();
+                          return `
+                            <div class="kpi-risk-detail" data-ovrisk="${esc(it.kind)}:${esc(it.row.id)}">
+                              <div class="kpi-risk-detail-tag"><span class="kpi-src ${srcCls}">${esc(srcLab)}</span></div>
+                              <div class="kpi-risk-detail-body">
+                                <div class="kpi-risk-name">${esc(nm)}</div>
+                                ${note ? `<div class="kpi-risk-note">${esc(note)}</div>` : ``}
+                                ${own ? `<div class="kpi-risk-detail-own">${esc(own)}</div>` : ``}
+                              </div>
                             </div>
-                          </div>
-                        `;
-                      }).join('')}
-                      ${!app.overviewRiskShowAll && riskCount>1 ? `<div class="kpi-risk-more-hint">还有 ${riskCount-1} 项风险，点击空白处展开查看全部</div>` : ``}
-                      ${app.overviewRiskShowAll && riskCount>1 ? `<div class="kpi-risk-more-hint kpi-risk-more-hint--dim">点击空白处收起列表</div>` : ``}
-                    </div>
-                  `}
+                          `;
+                        }).join('')}
+                        ${!app.overviewRiskShowAll && riskCount>1 ? `<div class="kpi-risk-more-hint">还有 ${riskCount-1} 项风险，点击空白处展开查看全部</div>` : ``}
+                        ${app.overviewRiskShowAll && riskCount>1 ? `<div class="kpi-risk-more-hint kpi-risk-more-hint--dim">点击空白处收起列表</div>` : ``}
+                      </div>
+                    `}
+                  </div>
+                  <div class="kpi-card-more">
+                    <span class="kpi-more-link" data-ovjump="thisweek-risk" role="button" tabindex="0">查看更多风险详情</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -4503,6 +4519,76 @@
             }
           });
           x.addEventListener('click', (e)=> e.stopPropagation());
+        });
+        el.querySelectorAll('[data-ovjump]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const j = x.getAttribute('data-ovjump');
+            if(j === 'milestones'){
+              app.activeTab = 'milestones';
+              render();
+              return;
+            }
+            if(j === 'versions'){
+              app.activeTab = 'versions';
+              render();
+              return;
+            }
+            if(j === 'thisweek-risk'){
+              app.thisWeekRiskOnly = true;
+              app.activeTab = 'thisweek';
+              render();
+              return;
+            }
+          });
+          x.addEventListener('keydown', (e)=>{
+            if(e.key !== 'Enter' && e.key !== ' ') return;
+            e.preventDefault();
+            x.click();
+          });
+        });
+        el.querySelectorAll('[data-ovcard]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            if(e.target.closest && e.target.closest('[data-ovjump]')) return;
+            const t = x.getAttribute('data-ovcard');
+            if(t === 'risk'){
+              if(x.getAttribute('data-ovrisk-expandable') === '1'){
+                app.overviewRiskShowAll = !app.overviewRiskShowAll;
+                render();
+              }
+              return;
+            }
+            if(t === 'ms'){
+              app.activeTab = 'milestones';
+              render();
+              if(keyMs?.id) openDrawerByKey('milestone', keyMs.id);
+              return;
+            }
+            if(t === 'release'){
+              app.activeTab = 'versions';
+              render();
+              return;
+            }
+          });
+        });
+        el.querySelectorAll('[data-ovver]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const vid = x.getAttribute('data-ovver');
+            if(!vid) return;
+            app.activeTab = 'versions';
+            render();
+            openDrawerByKey('version', vid);
+          });
+        });
+        el.querySelectorAll('[data-ovrisk]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const [k, id] = x.getAttribute('data-ovrisk').split(':');
+            app.activeTab = 'thisweek';
+            render();
+            openDrawerByKey(k, id);
+          });
         });
         // no click-to-toggle badges in this view
       }
