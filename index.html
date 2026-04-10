@@ -613,6 +613,28 @@
       }
 
       /* ── ThisWeek: columns ── */
+      .tw-followup-bar{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap: var(--space-3);
+        flex-wrap:wrap;
+        margin-bottom: var(--space-3);
+      }
+      .tw-followup-bar .kicker{
+        margin-bottom: 0;
+      }
+      .tw-risk-filter{
+        display:inline-flex;
+        align-items:center;
+        gap: 8px;
+        cursor:pointer;
+        font-size: 0.8125rem;
+        font-weight: 650;
+        color: var(--text-secondary);
+        user-select:none;
+        flex-shrink:0;
+      }
       .columns3{
         display:grid;
         grid-template-columns: 1fr 1fr 1fr;
@@ -4184,12 +4206,6 @@
         const opsList = sortListTw('ops', opsTw);
 
         el.innerHTML = `
-          <div class="tw-topbar" style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
-            <label class="tw-risk-filter" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:650;color:var(--text-secondary);user-select:none;">
-              <input type="checkbox" class="accent-primary" data-twriskonly ${app.thisWeekRiskOnly?'checked':''} style="width:16px;height:16px;"/>
-              <span>仅显示风险项</span>
-            </label>
-          </div>
           <div class="section">
             <div class="kicker">本周重点</div>
             <div class="focus-grid">
@@ -4229,7 +4245,13 @@
           </div>
 
           <div class="section">
-            <div class="kicker">跟进事项</div>
+            <div class="tw-followup-bar">
+              <div class="kicker">跟进事项</div>
+              <label class="tw-risk-filter">
+                <input type="checkbox" class="accent-primary" data-twriskonly ${app.thisWeekRiskOnly?'checked':''} style="width:16px;height:16px;"/>
+                <span>仅显示风险项</span>
+              </label>
+            </div>
             <div class="columns3">
               <div class="col">
                 <div class="col-head">
