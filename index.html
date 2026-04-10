@@ -712,7 +712,7 @@
         grid-area: phasebar;
         background-color: color-mix(in srgb, var(--primary-container) 45%, var(--surface-container-lowest) 55%);
         border-radius: var(--radius-xl);
-        padding: var(--space-6) var(--space-8);
+        padding: var(--space-3) var(--space-6);
         box-shadow: var(--shadow-md);
       }
       .overview-phase-bar[data-ovmonthsum="1"]{ cursor:pointer; }
@@ -725,26 +725,39 @@
         justify-content:space-between;
         gap:12px;
         flex-wrap:wrap;
-        margin-bottom:8px;
+      }
+      .overview-phase-bar-title-row{
+        display:flex;
+        align-items:baseline;
+        flex-wrap:wrap;
+        gap:8px 10px;
+        min-width:0;
+        flex:1;
       }
       .overview-phase-bar-title{
         font-weight:600;
-        font-size:1rem;
+        font-size:0.9375rem;
         letter-spacing:0.02em;
+        line-height:1.35;
         color:var(--on-surface);
+        min-width:0;
       }
-      .overview-phase-bar-meta{
-        font-size:13px;
-        font-weight:700;
-        color:var(--on-surface-variant);
-        white-space:nowrap;
-      }
-      .overview-phase-bar-track{
-        font-size:13px;
-        line-height:1.4;
+      .overview-phase-bar-pct{
+        flex-shrink:0;
+        font-size:0.8125rem;
+        line-height:1.3;
         font-weight:800;
         letter-spacing:0.02em;
         color:var(--primary);
+        padding:2px 8px;
+        border-radius:var(--radius-full);
+        background-color:color-mix(in srgb, var(--primary) 12%, transparent);
+      }
+      .overview-phase-bar-meta{
+        font-size:12px;
+        font-weight:700;
+        color:var(--on-surface-variant);
+        white-space:nowrap;
       }
       .kpi-stack{ grid-area: kpi; }
       .kpi-row{
@@ -4754,10 +4767,12 @@
           <div class="overview-wrap">
             <div class="overview-phase-bar" data-ovmonthsum="1" role="button" tabindex="0" title="查看本月关联事项">
               <div class="overview-phase-bar-head">
-                <div class="overview-phase-bar-title">${esc(phaseBarHeadTitle)}</div>
+                <div class="overview-phase-bar-title-row">
+                  <span class="overview-phase-bar-title">${esc(phaseBarHeadTitle)}</span>
+                  <span class="overview-phase-bar-pct">${phasePct}%</span>
+                </div>
                 <div class="overview-phase-bar-meta">${phaseMsDone} / ${phaseMsTotal} 里程碑已完成</div>
               </div>
-              <div class="overview-phase-bar-track">${phasePct}%</div>
             </div>
             <div class="kpi-stack">
               <div class="kpi-row">
