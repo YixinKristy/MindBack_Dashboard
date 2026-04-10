@@ -226,7 +226,7 @@
       .sidebar.collapsed .nav-item{ justify-content:center; gap: 0; padding: 10px 8px; }
       .sidebar.collapsed .nav-label{ display:none; }
       .sidebar.collapsed .nav-count{ display:none; }
-      .sidebar.collapsed .nav-ico{ width: 22px; }
+      .sidebar.collapsed .nav-ico{ width: 22px; height: 22px; }
       .sidebar.collapsed .sidebar-bottom{ display:none; }
       .brand{
         display:flex;
@@ -300,10 +300,23 @@
         font-weight: 600;
       }
       .nav-ico{
-        width: 18px;
-        text-align:center;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        color: inherit;
         opacity: 0.92;
-        flex-shrink:0;
+      }
+      .nav-ico-svg{
+        display: block;
+        width: 20px;
+        height: 20px;
+      }
+      .sidebar.collapsed .nav-ico-svg{
+        width: 22px;
+        height: 22px;
       }
       .nav-label{ font-weight: 650; }
       .nav-count{
@@ -1974,13 +1987,28 @@
       };
 
       const TABS = [
-        { id:'overview', label:'总览', ico:'⬤' },
-        { id:'thisweek', label:'本周', ico:'⚡' },
-        { id:'versions', label:'版本管理', ico:'⬆' },
-        { id:'alltasks', label:'全量任务', ico:'≣' },
-        { id:'milestones', label:'里程碑', ico:'◆' },
-        { id:'backlog', label:'Backlog', ico:'≡' },
+        { id:'overview', label:'总览', icon:'overview' },
+        { id:'thisweek', label:'本周', icon:'thisweek' },
+        { id:'versions', label:'版本管理', icon:'versions' },
+        { id:'alltasks', label:'全量任务', icon:'alltasks' },
+        { id:'milestones', label:'里程碑', icon:'milestones' },
+        { id:'backlog', label:'Backlog', icon:'backlog' },
       ];
+
+      /** 侧栏导航：统一 24 视图描边图标，颜色随 .nav-item currentColor（与主色 token 一致） */
+      function navIconSvg(kind){
+        const a = 'viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"';
+        const paths = {
+          overview: '<rect x="3" y="3" width="7.5" height="7.5" rx="1.25"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.25"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.25"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.25"/>',
+          thisweek: '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
+          versions: '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
+          alltasks: '<path d="M4 6h16M4 12h16M4 18h16"/>',
+          milestones: '<path d="M12 3l7.5 9-7.5 9-7.5-9 7.5-9z"/>',
+          backlog: '<path d="M12 3L4 8l8 5 8-5-8-5z"/><path d="M4 13l8 5 8-5"/><path d="M4 18l8 5 8-5"/>',
+        };
+        const body = paths[kind] || paths.overview;
+        return `<svg class="nav-ico-svg" ${a} aria-hidden="true">${body}</svg>`;
+      }
 
       function $(id){ return document.getElementById(id); }
       function esc(s){ return String(s ?? '').replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
@@ -2632,7 +2660,7 @@
           const active = t.id===app.activeTab ? 'nav-item active' : 'nav-item';
           const cnt = t.id==='backlog' ? `<span class="nav-count">${backlogCount}</span>` : '';
           return `<div class="${active}" data-tab="${t.id}">
-            <span class="nav-ico">${esc(t.ico)}</span>
+            <span class="nav-ico">${navIconSvg(t.icon)}</span>
             <span class="nav-label">${esc(t.label)}</span>
             ${cnt}
           </div>`;
