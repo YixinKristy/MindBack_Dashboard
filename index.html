@@ -706,7 +706,7 @@
           "phasebar phasebar"
           "kpi kpi"
           "milestones versions";
-        gap: 12px;
+        gap: 8px 14px;
       }
       .overview-phase-bar{
         grid-area: phasebar;
@@ -750,7 +750,7 @@
       .kpi-row{
         display:grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: var(--space-5);
+        gap: var(--space-4);
       }
       .kpi-card{
         position: relative;
@@ -763,6 +763,14 @@
         min-height: 128px;
         display:flex;
         flex-direction:column;
+      }
+      .overview-wrap .kpi-card{
+        padding: var(--space-4) var(--space-5);
+        min-height: 96px;
+        box-shadow: var(--shadow-md);
+      }
+      .overview-wrap .kpi-card:hover{
+        box-shadow: var(--shadow-float);
       }
       .kpi-card-main{ flex:1; min-height:0; }
       .kpi-card-more{
@@ -825,7 +833,25 @@
       .kpi-badge.released{ color:var(--success); background-color: var(--success-container); }
       .kpi-badge.none{ color: var(--on-surface-disabled); background: transparent; }
       .kpi-risk-bg{
-        background-color: color-mix(in srgb, var(--surface-container-lowest) 98.5%, var(--error) 1.5%) !important;
+        background-color: color-mix(in srgb, var(--surface-container-lowest) 99.2%, var(--error) 0.8%) !important;
+      }
+      .overview-wrap .kpi-risk-summary-line{
+        margin-top: 6px;
+        font-size: 16px;
+      }
+      .overview-wrap .kpi-risk-detail-wrap{
+        margin-top: 8px;
+        gap: 8px;
+      }
+      .overview-wrap .kpi-col{
+        margin-top: 8px;
+        gap: 4px;
+      }
+      .overview-wrap .kpi-card-more{
+        margin-top: var(--space-2);
+      }
+      .overview-wrap .kpi-risk-detail{
+        padding: 10px 12px 11px;
       }
       .kpi-risk-summary-line{
         margin-top: 10px;
@@ -889,6 +915,48 @@
         display:flex;
         flex-direction:column;
         min-height:0;
+      }
+      .overview-wrap .phase-card,
+      .overview-wrap .ver-panel{
+        box-shadow: var(--shadow-lg);
+      }
+      .overview-wrap .phase-card .phase-title{
+        font-size: 1rem;
+      }
+      .overview-wrap .phase-card .phase-sub{
+        font-size: 11px;
+        line-height: 1.45;
+        margin-top: 8px;
+      }
+      .overview-wrap .phase-card .phase-range{
+        font-size: 0.6875rem;
+      }
+      .overview-wrap .phase-card .ms-name{
+        font-size: 12px;
+      }
+      .overview-wrap .phase-card .ms-date{
+        font-size: 11px;
+      }
+      .overview-wrap .phase-card .ms-row{
+        padding: 8px 10px;
+      }
+      .overview-wrap .phase-card .row-item{
+        height: 38px;
+        padding: 0 10px;
+      }
+      .overview-wrap .phase-card .row-name{
+        font-size: 12px;
+        font-weight: 650;
+      }
+      .overview-ms-expand .ov-ms-sec{
+        color: var(--text-secondary);
+        font-size: 11px;
+        font-weight: 850;
+        letter-spacing: 0.04em;
+        margin-bottom: 6px;
+      }
+      .overview-ms-expand .ov-ms-sec.spaced{
+        margin-top: 10px;
       }
       .overview-panel-title{
         display:flex;
@@ -1181,7 +1249,6 @@
         padding: var(--space-4) var(--space-5);
         background: color-mix(in srgb, var(--surface-container-low) 35%, var(--surface-container-lowest) 65%);
         border-radius: var(--radius-lg);
-        border: 1px solid var(--outline-variant);
         box-shadow: var(--shadow-sm);
       }
       .versions-toolbar .pill-tabs{ margin-bottom: 0; }
@@ -1192,7 +1259,6 @@
       }
       .version-card{
         background: color-mix(in srgb, var(--surface-container-low) 22%, var(--surface-container-lowest) 78%);
-        border: 1px solid var(--outline-variant);
         border-radius: var(--radius-xl);
         padding: var(--space-6);
         box-shadow: var(--shadow-sm);
@@ -1229,7 +1295,6 @@
         background: color-mix(in srgb, var(--surface) 55%, var(--surface-container-low) 45%);
         border-radius: var(--radius-lg);
         padding: var(--space-4);
-        border: 1px solid color-mix(in srgb, var(--outline-variant) 70%, transparent);
       }
       .version-task-grid{
         display:grid;
@@ -1243,7 +1308,6 @@
         background: color-mix(in srgb, var(--surface-container-lowest) 92%, var(--surface) 8%);
         border-radius: var(--radius-md);
         padding: var(--space-4);
-        border: 1px solid var(--outline-variant);
         min-width: 0;
       }
       .version-module-title{
@@ -1303,7 +1367,6 @@
       /* ── Milestones tab ── */
       .phase-axis{
         background: color-mix(in srgb, var(--surface-container-low) 28%, var(--surface-container-lowest) 72%);
-        border: 1px solid var(--outline-variant);
         border-radius: var(--radius-lg);
         padding: var(--space-6);
         margin-bottom: var(--space-5);
@@ -1348,15 +1411,14 @@
       .axis-node.current .node-name{ color: var(--text-primary); }
       .ms-group{
         background: color-mix(in srgb, var(--surface-container-low) 18%, var(--surface-container-lowest) 82%);
-        border: 1px solid var(--outline-variant);
         border-radius: var(--radius-xl);
         padding: var(--space-6);
         margin-bottom: var(--space-5);
         box-shadow: var(--shadow-sm);
       }
       .ms-group--current{
-        background: color-mix(in srgb, var(--surface-container-low) 38%, var(--surface-container-lowest) 62%);
-        border-color: color-mix(in srgb, var(--primary) 22%, var(--outline-variant) 78%);
+        background: color-mix(in srgb, var(--surface-container-low) 42%, var(--surface-container-lowest) 58%);
+        box-shadow: var(--shadow-md);
       }
       .group-head{
         display:flex;
@@ -1384,7 +1446,6 @@
         padding: var(--space-4) var(--space-5);
         background: color-mix(in srgb, var(--surface-container-low) 35%, var(--surface-container-lowest) 65%);
         border-radius: var(--radius-lg);
-        border: 1px solid var(--outline-variant);
         box-shadow: var(--shadow-sm);
       }
       .pool{
@@ -4643,8 +4704,8 @@
                 <div class="kpi-card" data-ovcard="ms">
                   <div class="kpi-card-main">
                     <div class="kpi-title text-title-sm">本周里程碑</div>
-                    <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(weekMsLabel)}</div>
-                    <div class="kpi-body-md kpi-secondary" style="margin-top:10px;">${esc(weekMsDateStr)} · ${weekMsTaskCnt} 项任务</div>
+                    <div class="kpi-body-md" style="margin-top:6px;white-space:pre-wrap;line-height:1.35;">${esc(weekMsLabel)}</div>
+                    <div class="kpi-body-md kpi-secondary" style="margin-top:6px;">${esc(weekMsDateStr)} · ${weekMsTaskCnt} 项任务</div>
                   </div>
                   <div class="kpi-card-more">
                     <span class="kpi-more-link" data-ovjump="milestones" role="button" tabindex="0">更多目标</span>
@@ -4670,7 +4731,7 @@
                             <span class="kpi-badge ${badgeCls}">${esc(stLab)}</span>
                           </div>
                         `;
-                      }).filter(Boolean).join('') || `<div class="kpi-body-md kpi-muted" style="margin-top:8px;">本周无发布</div>`}
+                      }).filter(Boolean).join('') || `<div class="kpi-body-md kpi-muted" style="margin-top:6px;">本周无发布</div>`}
                     </div>
                   </div>
                   <div class="kpi-card-more">
@@ -4682,7 +4743,7 @@
                   <div class="kpi-card-main">
                     <div class="kpi-title text-title-sm">本周风险</div>
                     ${riskCount===0 ? `
-                      <div class="kpi-body-md kpi-secondary" style="margin-top:14px;">暂无风险</div>
+                      <div class="kpi-body-md kpi-secondary" style="margin-top:8px;">暂无风险</div>
                     ` : `
                       <div class="kpi-risk-summary-line ${riskTone==='secondary'?'kpi-secondary':riskTone==='tertiary'?'kpi-tertiary':'kpi-error'}">${esc(riskSummary)}</div>
                       <div class="kpi-risk-detail-wrap">
@@ -4774,7 +4835,7 @@
               <div class="phase-head">
                 <div>
                   <div class="phase-title">${esc(phaseTitle)}</div>
-                  <div class="phase-sub" style="margin-top:10px;">${esc(phaseDesc)}</div>
+                  <div class="phase-sub">${esc(phaseDesc)}</div>
                 </div>
                 <div class="phase-range">${esc(phaseRange)}</div>
               </div>
@@ -4807,14 +4868,14 @@
                       </div>
                     </div>
                     ${expanded ? `
-                      <div style="padding:10px 12px 6px 12px;">
-                        ${weekTasks.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">功能（${weekTasks.length}）</div>` : ``}
-                        ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
-                        ${weekBugs.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">Bug（${weekBugs.length}）</div>` : ``}
-                        ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
-                        ${weekOps.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">运营（${weekOps.length}）</div>` : ``}
-                        ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
-                        ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:12px;">该周暂无已排期事项</div>` : ``}
+                      <div class="overview-ms-expand" style="padding:8px 10px 4px 10px;">
+                        ${weekTasks.length ? `<div class="ov-ms-sec">功能（${weekTasks.length}）</div>` : ``}
+                        ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
+                        ${weekBugs.length ? `<div class="ov-ms-sec spaced">Bug（${weekBugs.length}）</div>` : ``}
+                        ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
+                        ${weekOps.length ? `<div class="ov-ms-sec spaced">运营（${weekOps.length}）</div>` : ``}
+                        ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
+                        ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:11px;">该周暂无已排期事项</div>` : ``}
                       </div>
                     ` : ``}
                   `;
