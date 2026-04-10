@@ -709,19 +709,19 @@
         background: var(--surface);
         border-radius: var(--radius-lg);
         padding: 24px;
-        position: relative;
       }
-      .overview-corner-title{
-        position:absolute;
-        top: 16px;
-        right: 18px;
+      .overview-panel-title{
+        display:flex;
+        align-items:center;
+        justify-content:flex-end;
+        margin: -2px 0 12px;
         font-size: 14px;
-        font-weight: 900;
-        letter-spacing: 0.04em;
+        font-weight: 950;
+        letter-spacing: 0.05em;
         color:#dce4ff;
-        opacity: .95;
-        pointer-events:none;
-        text-shadow: 0 0 18px rgba(180,197,255,0.18);
+        text-shadow: 0 0 18px rgba(180,197,255,0.14);
+        white-space: normal;
+        word-break: break-word;
       }
       .phase-head{
         display:flex;
@@ -836,8 +836,6 @@
         display:flex;
         flex-direction:column;
         gap: 12px;
-        position: relative;
-        padding-top: 22px;
       }
       .ver-mini{
         background: var(--surface-raised);
@@ -4450,7 +4448,7 @@
             </div>
 
             <div class="ver-stack">
-              <div class="overview-corner-title">版本详情</div>
+              <div class="overview-panel-title">版本详情</div>
               ${shallowWeekVers.length ? `
                 <div class="ver-group">
                   <div class="ver-group-head" data-vgroup="thisweek">
@@ -4502,7 +4500,7 @@
             </div>
 
             <div class="phase-card">
-              <div class="overview-corner-title">目标关联任务情况</div>
+              <div class="overview-panel-title" style="justify-content:flex-start;">目标关联任务情况</div>
               <div class="phase-head">
                 <div>
                   <div class="phase-title">${esc(phaseTitle)}</div>
