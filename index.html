@@ -521,9 +521,66 @@
         display:grid;
         grid-template-columns: 1fr 1fr;
         grid-template-areas:
+          "phasebar phasebar"
           "kpi kpi"
+          "twver twver"
           "milestones versions";
         gap: 12px;
+      }
+      .overview-phase-bar{
+        grid-area: phasebar;
+        background: var(--surface);
+        border-radius: var(--radius-lg);
+        padding: 16px 20px;
+      }
+      .overview-phase-bar-head{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:12px;
+        flex-wrap:wrap;
+        margin-bottom:8px;
+      }
+      .overview-phase-bar-title{
+        font-weight:800;
+        font-size:15px;
+        letter-spacing:0.02em;
+        color:var(--text-primary);
+      }
+      .overview-phase-bar-meta{
+        font-size:13px;
+        font-weight:700;
+        color:var(--text-secondary);
+        white-space:nowrap;
+      }
+      .overview-phase-bar-track{
+        font-family: ui-monospace, Menlo, monospace;
+        font-size:13px;
+        line-height:1.4;
+        letter-spacing:0.04em;
+        color:#b4c5ff;
+        word-break:break-all;
+      }
+      .overview-tw-ver-section{
+        grid-area: twver;
+      }
+      .overview-tw-ver-head{
+        font-size:12px;
+        color:var(--text-secondary);
+        margin-bottom:10px;
+        font-weight:850;
+        letter-spacing:0.04em;
+      }
+      .ver-mini--hero{
+        padding: 18px 20px;
+        margin-bottom:12px;
+      }
+      .ver-mini--hero:last-child{ margin-bottom:0; }
+      .ver-num--hero{
+        font-size: 26px;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        font-family: var(--font-display);
       }
       .kpi-stack{ grid-area: kpi; }
       .kpi-row{
@@ -3940,27 +3997,16 @@
         const phaseTitle = phase ? `${phase.name || ''}·${phase.theme || ''}`.replace(/\s*·\s*$/,'') : '第一阶段·稳功能基础';
         const phaseRange = phase?.month_range || '';
         const phaseDesc = phase?.description || '';
-        // 月目标：优先用阶段 theme（与你的期望一致）；若为空再退回 board_overview.month_goal
-        const monthGoalText = ((phase?.theme || '').trim() || (app.board?.overview?.month_goal || '').trim() || '').trim();
 
-        const daysUntil = (ymdStr)=>{
-          const d = parseYmdLocal(ymdStr);
-          if(!d) return null;
-          const now0 = new Date(); now0.setHours(0,0,0,0);
-          const t0 = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-          const diff = Math.round((t0.getTime() - now0.getTime()) / 86400000);
-          return diff;
-        };
         const msInCurrentPhase = milestones
           .filter(m=> String(m?.phase_id || '') === String(phase?.id || ''))
           .slice();
-        const keyMs = msInCurrentPhase.find(m=>m && m.status==='current')
-          || msInCurrentPhase.find(m=>m && m.status!=='done')
-          || null;
-        const keyMsTitle = keyMs?.title || '暂无里程碑';
-        const keyMsDue = (keyMs?.date_full && String(keyMs.date_full).match(/^\d{4}-\d{2}-\d{2}$/)) ? keyMs.date_full : '';
-        const keyMsDays = keyMsDue ? daysUntil(keyMsDue) : null;
-        const keyMsCountdown = (keyMsDays === null) ? '' : `距截止 ${Math.max(0, keyMsDays)} 天`;
+        const phaseMsTotal = msInCurrentPhase.length;
+        const phaseMsDone = msInCurrentPhase.filter(m=>m && m.status==='done').length;
+        const phaseBarSegs = 12;
+        const phaseBarFilled = phaseMsTotal ? Math.min(phaseBarSegs, Math.round(phaseMsDone / phaseMsTotal * phaseBarSegs)) : 0;
+        const phaseBarStr = '█'.repeat(phaseBarFilled) + '░'.repeat(Math.max(0, phaseBarSegs - phaseBarFilled));
+        const phaseBarHeadTitle = phaseTitle.replace(/·/g,' · ');
 
         const weekDateOfVersion = (v)=>{
           const d1 = parseYmdLocal(v?.week_start);
@@ -4011,10 +4057,6 @@
         if(riskCount <= 1) app.overviewRiskShowAll = false;
         const riskTone = riskCount===0 ? 'secondary' : (riskCount<=2 ? 'tertiary' : 'error');
         const riskStrip = riskCount===0 ? 'strip-secondary' : 'strip-error';
-        // 进度条暂用现有占位（后续可改为 phase 内真实进度）
-        const pTotal = 30;
-        const pNow = Math.min(pTotal, 12);
-        const pct = Math.round((pNow/pTotal) * 100);
 
         const classify = (v)=>{
           const d = weekDateOfVersion(v);
@@ -4069,13 +4111,57 @@
           return d && isInSameWeekMondayToSunday(d, now);
         });
 
+        const weekMs = (milestones || []).find(m=>{
+          const { start: msS, end: msE } = parseRangeYmd(m?.date_full || m?.date_short || '');
+          if(!msS || !msE) return false;
+          return rangesOverlap(msS, msE, wStart, wEnd);
+        }) || null;
+        const weekMsLabel = ((weekMs?.title || '').trim() || '—');
+        const weekMsDateStr = ((weekMs?.date_short || weekMs?.date_full || '').trim() || '—');
+        const weekMsTaskCnt = (()=>{
+          if(!weekMs) return 0;
+          const { start: msS, end: msE } = parseRangeYmd(weekMs.date_full || weekMs.date_short || '');
+          if(!msS || !msE) return 0;
+          const matchOverlap = (row)=>{
+            const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
+            const { start, end } = parseRangeYmd(raw);
+            if(!start || !end) return false;
+            return rangesOverlap(start, end, msS, msE);
+          };
+          return tasks.filter(matchOverlap).length + bugs.filter(matchOverlap).length + ops.filter(matchOverlap).length;
+        })();
+
+        const weekStartTimeOf = (v)=>{
+          const d = weekDateOfVersion(v);
+          if(!d) return null;
+          return startOfWeekMonday(d).getTime();
+        };
+        const byWeekVers = new Map();
+        for(const v of versAll){
+          const k = weekStartTimeOf(v);
+          if(k==null) continue;
+          if(!byWeekVers.has(k)) byWeekVers.set(k, []);
+          byWeekVers.get(k).push(v);
+        }
+        const versForWeekKey = (k)=> (byWeekVers.get(k) || []).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+        const nextWeekMonday = new Date(wStart); nextWeekMonday.setDate(nextWeekMonday.getDate()+7);
+        const nextWeekKey = startOfWeekMonday(nextWeekMonday).getTime();
+        const shallowWeekVers = thisWeekStrict.slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+        const pastVersList = (groups.past||[]).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+        const nextWeekVersList = versForWeekKey(nextWeekKey);
+        const otherVersList = (groups.other||[]).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
+
         app.overviewVersionExpanded = app.overviewVersionExpanded || {};
-        app.overviewGroupOpen = app.overviewGroupOpen || { future:false, past:false, other:false };
+        app.overviewGroupOpen = app.overviewGroupOpen || { past:false, nextweek:false, other:false };
+        if(app.overviewGroupOpen && typeof app.overviewGroupOpen.future !== 'undefined'){
+          app.overviewGroupOpen.nextweek = !!app.overviewGroupOpen.future;
+          delete app.overviewGroupOpen.future;
+        }
         app.overviewSort = app.overviewSort || {}; // key: `${vid}:${kind}` -> sortKey
 
-        // 默认展开当周版本
-        for(const v of thisWeekStrict){
-          if(typeof app.overviewVersionExpanded[v.id] === 'undefined') app.overviewVersionExpanded[v.id] = true;
+        // 历史 / 下周分组内版本卡：默认收起关联列表（第一层可再展开）
+        for(const v of versAll){
+          if(typeof app.overviewVersionExpanded[v.id] === 'undefined') app.overviewVersionExpanded[v.id] = false;
         }
 
         function linkedByVersion(row, vid){
@@ -4210,70 +4296,48 @@
             </div>
           `;
         }
-
-        const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
-        const weekRangeZh = `${formatYmdZh(ymd(wStart))}—${formatYmdZh(ymd(wEnd))}`;
-        const monthTitle = `${now.getMonth()+1}月目标`;
-
-        // 当周阶段目标：取“本周周目标”那条里程碑标题（默认只取 1 条，避免挤爆卡片）
-        const weekMs = (milestones || []).find(m=>{
-          const { start: msS, end: msE } = parseRangeYmd(m?.date_full || m?.date_short || '');
-          if(!msS || !msE) return false;
-          return rangesOverlap(msS, msE, wStart, wEnd);
-        }) || null;
-        const weekGoalText = ((weekMs?.title || '').trim() || '').trim();
-
-        // 总览固定展示近三周：上周 / 本周 / 下周（每周展示该周内所有端版本）
-        const pickTop3 = ()=>{
-          const weekStartOf = (v)=>{
-            const d = weekDateOfVersion(v);
-            if(!d) return null;
-            return startOfWeekMonday(d).getTime();
-          };
-          const curW = startOfWeekMonday(now).getTime();
-          const prevW = new Date(wStart); prevW.setDate(prevW.getDate()-7);
-          const nextW = new Date(wStart); nextW.setDate(nextW.getDate()+7);
-          const prevKey = startOfWeekMonday(prevW).getTime();
-          const nextKey = startOfWeekMonday(nextW).getTime();
-
-          const byWeek = new Map(); // key -> versions[]
-          for(const v of versAll){
-            const k = weekStartOf(v);
-            if(k==null) continue;
-            if(!byWeek.has(k)) byWeek.set(k, []);
-            byWeek.get(k).push(v);
-          }
-          const forWeek = (k)=> (byWeek.get(k) || []).slice().sort((a,b)=>(Number(b.sort_order)||0)-(Number(a.sort_order)||0));
-          const prevArr = forWeek(prevKey);
-          const curArr = forWeek(curW);
-          const nextArr = forWeek(nextKey);
-
-          // 只渲染近三周：上周/本周/下周；每周内包含所有端版本
-          // 其它版本仍通过“历史版本/未来版本”折叠区查看
-          const set = new Set([
-            ...prevArr.map(v=>v.id),
-            ...curArr.map(v=>v.id),
-            ...nextArr.map(v=>v.id),
-          ]);
-          const past = (groups.past||[]).filter(v=>set.has(v.id));
-          const thisweek = (thisWeekStrict||[]).filter(v=>set.has(v.id));
-          const future = (groups.future||[]).filter(v=>set.has(v.id));
-          const other = (groups.other||[]).filter(v=>set.has(v.id));
-          return { past, thisweek, future, other };
-        };
-        const top3 = pickTop3();
+        function verCardShallow(v){
+          const plat = v.platform==='ios'?'📱 iOS' : v.platform==='android'?'🤖 Android' : '🕸 Web';
+          const { t, b, o } = listByVersion(v.id);
+          const cnt = `${t.length} 功能 · ${b.length} Bug · ${o.length} 运营`;
+          return `
+            <div class="ver-mini ver-mini--hero" data-vid="${esc(v.id)}">
+              <div class="ver-top" style="align-items:flex-start;">
+                <div style="min-width:0;">
+                  <div class="ver-num ver-num--hero" data-open="version:${esc(v.id)}">${esc(v.version_num || '')}</div>
+                  <div class="ver-plat">${esc(plat)} · ${esc(versionWeekRangeLabel(v) || '—')}</div>
+                  <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">${esc(cnt)}</div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;">
+                  <select class="select" data-ovvstatus="${esc(v.id)}" style="width:auto;min-width:120px;padding:6px 10px;font-size:12px;">
+                    <option value="not_started" ${v.status==='not_started'?'selected':''}>未开始</option>
+                    <option value="dev" ${v.status==='dev'?'selected':''}>开发中</option>
+                    <option value="testing" ${v.status==='testing'?'selected':''}>测试中</option>
+                    <option value="submitted" ${v.status==='submitted'?'selected':''}>已提审</option>
+                    <option value="released" ${v.status==='released'?'selected':''}>已发布</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          `;
+        }
 
         el.innerHTML = `
           <div class="overview-wrap">
+            <div class="overview-phase-bar">
+              <div class="overview-phase-bar-head">
+                <div class="overview-phase-bar-title">${esc(phaseBarHeadTitle)}</div>
+                <div class="overview-phase-bar-meta">${phaseMsDone} / ${phaseMsTotal} 里程碑已完成</div>
+              </div>
+              <div class="overview-phase-bar-track">${esc(phaseBarStr)}</div>
+            </div>
             <div class="kpi-stack">
               <div class="kpi-row">
                 <div class="kpi-card strip-primary" data-ovcard="ms">
                   <div class="kpi-card-main">
-                    <div class="kpi-title">${esc(monthTitle)}</div>
-                    <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(monthGoalText || '—')}</div>
-                    <div class="kpi-gap16"></div>
-                    <div class="kpi-title">${esc(weekRangeZh)}阶段目标</div>
-                    <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(weekGoalText || '—')}</div>
+                    <div class="kpi-title">本周里程碑</div>
+                    <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(weekMsLabel)}</div>
+                    <div class="kpi-body-md kpi-secondary" style="margin-top:10px;">${esc(weekMsDateStr)} · ${weekMsTaskCnt} 项任务</div>
                   </div>
                   <div class="kpi-card-more">
                     <span class="kpi-more-link" data-ovjump="milestones" role="button" tabindex="0">更多目标</span>
@@ -4344,54 +4408,49 @@
               </div>
             </div>
 
+            <div class="overview-tw-ver-section">
+              <div class="overview-tw-ver-head">本周版本</div>
+              ${shallowWeekVers.length ? shallowWeekVers.map(v=> verCardShallow(v)).join('') : `<div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">本周暂无已绑定周次的版本</div>`}
+            </div>
+
             <div class="ver-stack">
-              ${top3.past.length ? `
+              ${pastVersList.length ? `
                 <div class="ver-group">
                   <div class="ver-group-head" data-vgroup="past">
                     <div class="ver-group-title">历史版本</div>
-                    <div class="ver-group-meta">${top3.past.length} 个 · 点击展开</div>
+                    <div class="ver-group-meta">${pastVersList.length} 个 · 点击展开</div>
                   </div>
                   <div style="display:${app.overviewGroupOpen.past?'block':'none'};" data-vgroup-body="past">
-                    ${top3.past.map(v=> verCard(v)).join('')}
+                    ${pastVersList.map(v=> verCard(v)).join('')}
                   </div>
                 </div>
               ` : ``}
 
-              ${top3.thisweek.length ? `
+              ${nextWeekVersList.length ? `
                 <div class="ver-group">
-                  <div class="ver-group-head" data-vgroup="thisweek">
-                    <div class="ver-group-title">${esc(weekRangeStr)}</div>
-                    <div class="ver-group-meta"></div>
+                  <div class="ver-group-head" data-vgroup="nextweek">
+                    <div class="ver-group-title">下周版本</div>
+                    <div class="ver-group-meta">${nextWeekVersList.length} 个 · 点击展开</div>
                   </div>
-                  ${top3.thisweek.map(v=> verCard(v)).join('')}
-                </div>
-              ` : ``}
-
-              ${top3.future.length ? `
-                <div class="ver-group">
-                  <div class="ver-group-head" data-vgroup="future">
-                    <div class="ver-group-title">未来版本</div>
-                    <div class="ver-group-meta">${top3.future.length} 个 · 点击展开</div>
-                  </div>
-                  <div style="display:${app.overviewGroupOpen.future?'block':'none'};" data-vgroup-body="future">
-                    ${top3.future.map(v=> verCard(v)).join('')}
+                  <div style="display:${app.overviewGroupOpen.nextweek?'block':'none'};" data-vgroup-body="nextweek">
+                    ${nextWeekVersList.map(v=> verCard(v)).join('')}
                   </div>
                 </div>
               ` : ``}
 
-              ${top3.other.length ? `
+              ${otherVersList.length ? `
                 <div class="ver-group">
                   <div class="ver-group-head" data-vgroup="other">
                     <div class="ver-group-title">未识别日期（手工维护）</div>
-                    <div class="ver-group-meta">${top3.other.length} 个 · 点击展开</div>
+                    <div class="ver-group-meta">${otherVersList.length} 个 · 点击展开</div>
                   </div>
                   <div style="display:${app.overviewGroupOpen.other?'block':'none'};" data-vgroup-body="other">
-                    ${top3.other.map(v=> verCard(v)).join('')}
+                    ${otherVersList.map(v=> verCard(v)).join('')}
                   </div>
                 </div>
               ` : ``}
 
-              ${(!top3.past.length && !top3.thisweek.length && !top3.future.length && !top3.other.length) ? `
+              ${(!pastVersList.length && !nextWeekVersList.length && !otherVersList.length) ? `
                 <div style="color:var(--text-secondary);font-size:12px;padding:4px 2px;">暂无可展示的版本内容</div>
               ` : ``}
             </div>
@@ -4404,7 +4463,6 @@
                 </div>
                 <div class="phase-range">${esc(phaseRange)}</div>
               </div>
-              <div class="bar"><i style="width:${pct}%"></i></div>
               <div class="milestone-list">
                 ${(milestones || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).slice(0,10).map(m=>{
                   app.overviewMilestoneExpanded = app.overviewMilestoneExpanded || {};
@@ -4561,7 +4619,7 @@
             if(t === 'ms'){
               app.activeTab = 'milestones';
               render();
-              if(keyMs?.id) openDrawerByKey('milestone', keyMs.id);
+              if(weekMs?.id) openDrawerByKey('milestone', weekMs.id);
               return;
             }
             if(t === 'release'){
