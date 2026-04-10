@@ -335,7 +335,7 @@
         flex-direction:column;
       }
       .header{
-        height:64px;
+        height:52px;
         background: transparent;
         display:flex;
         align-items:center;
@@ -347,8 +347,10 @@
       }
       .header-title{
         font-family: var(--font-display);
-        font-size: 1.5rem;
+        font-size: 1.125rem;
         font-weight: 600;
+        line-height: 1.35;
+        letter-spacing: 0.01em;
         color: var(--on-surface);
       }
       .header-right{
@@ -411,7 +413,7 @@
       .content{
         flex:1;
         overflow:auto;
-        padding: var(--space-8) var(--space-10);
+        padding: var(--space-5) var(--space-10) var(--space-8);
         scrollbar-width: thin;
         scrollbar-color: var(--surface-container-highest) var(--surface);
       }
@@ -822,7 +824,9 @@
       .kpi-badge.submitted{ color:var(--warning); background-color: var(--warning-container); }
       .kpi-badge.released{ color:var(--success); background-color: var(--success-container); }
       .kpi-badge.none{ color: var(--on-surface-disabled); background: transparent; }
-      .kpi-risk-bg{ background-color: var(--error-container) !important; }
+      .kpi-risk-bg{
+        background-color: color-mix(in srgb, var(--surface-container-lowest) 98.5%, var(--error) 1.5%) !important;
+      }
       .kpi-risk-summary-line{
         margin-top: 10px;
         font-family: var(--font-display);
@@ -1167,29 +1171,93 @@
         background: var(--surface-raised);
         color: var(--text-primary);
       }
-      .version-card{
-        background: var(--surface);
+      .versions-toolbar{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap: var(--space-4);
+        flex-wrap:wrap;
+        margin-bottom: var(--space-5);
+        padding: var(--space-4) var(--space-5);
+        background: color-mix(in srgb, var(--surface-container-low) 35%, var(--surface-container-lowest) 65%);
         border-radius: var(--radius-lg);
-        padding: 24px;
-        margin-bottom: 12px;
+        border: 1px solid var(--outline-variant);
+        box-shadow: var(--shadow-sm);
+      }
+      .versions-toolbar .pill-tabs{ margin-bottom: 0; }
+      .versions-list{
+        display:flex;
+        flex-direction:column;
+        gap: var(--space-5);
+      }
+      .version-card{
+        background: color-mix(in srgb, var(--surface-container-low) 22%, var(--surface-container-lowest) 78%);
+        border: 1px solid var(--outline-variant);
+        border-radius: var(--radius-xl);
+        padding: var(--space-6);
+        box-shadow: var(--shadow-sm);
       }
       .version-head{
         display:flex;
         align-items:center;
-        gap: 12px;
-        margin-bottom: 12px;
-        cursor:pointer;
+        gap: var(--space-3);
+        margin-bottom: var(--space-4);
+        flex-wrap: wrap;
+      }
+      .version-head-meta{
+        margin-left: auto;
+        display:flex;
+        align-items:center;
+        gap: var(--space-2);
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .version-week-hint{
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--on-surface-variant);
+        letter-spacing: 0.02em;
+        white-space: nowrap;
       }
       .version-num{
         font-family: var(--font-display);
-        font-size: 18px;
-        font-weight: 800;
-        letter-spacing: 0.04em;
+        font-size: 1rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
       }
       .version-tasks{
-        background-color: var(--surface-container-low);
+        background: color-mix(in srgb, var(--surface) 55%, var(--surface-container-low) 45%);
+        border-radius: var(--radius-lg);
+        padding: var(--space-4);
+        border: 1px solid color-mix(in srgb, var(--outline-variant) 70%, transparent);
+      }
+      .version-task-grid{
+        display:grid;
+        grid-template-columns: 1fr;
+        gap: var(--space-4);
+      }
+      @media (min-width: 768px){
+        .version-task-grid{ grid-template-columns: 1fr 1fr; }
+      }
+      .version-module{
+        background: color-mix(in srgb, var(--surface-container-lowest) 92%, var(--surface) 8%);
         border-radius: var(--radius-md);
-        padding: 12px;
+        padding: var(--space-4);
+        border: 1px solid var(--outline-variant);
+        min-width: 0;
+      }
+      .version-module-title{
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--on-surface-variant);
+        margin-bottom: var(--space-3);
+      }
+      .version-module-empty{
+        font-size: 0.8125rem;
+        color: var(--on-surface-variant);
+        padding: var(--space-2) var(--space-1);
       }
       .chk-row{
         display:flex;
@@ -1234,10 +1302,12 @@
 
       /* ── Milestones tab ── */
       .phase-axis{
-        background: var(--surface);
+        background: color-mix(in srgb, var(--surface-container-low) 28%, var(--surface-container-lowest) 72%);
+        border: 1px solid var(--outline-variant);
         border-radius: var(--radius-lg);
-        padding: 24px;
-        margin-bottom: 12px;
+        padding: var(--space-6);
+        margin-bottom: var(--space-5);
+        box-shadow: var(--shadow-sm);
       }
       .axis-line{
         display:flex;
@@ -1277,10 +1347,16 @@
       }
       .axis-node.current .node-name{ color: var(--text-primary); }
       .ms-group{
-        background: var(--surface);
-        border-radius: var(--radius-lg);
-        padding: 24px;
-        margin-bottom: 12px;
+        background: color-mix(in srgb, var(--surface-container-low) 18%, var(--surface-container-lowest) 82%);
+        border: 1px solid var(--outline-variant);
+        border-radius: var(--radius-xl);
+        padding: var(--space-6);
+        margin-bottom: var(--space-5);
+        box-shadow: var(--shadow-sm);
+      }
+      .ms-group--current{
+        background: color-mix(in srgb, var(--surface-container-low) 38%, var(--surface-container-lowest) 62%);
+        border-color: color-mix(in srgb, var(--primary) 22%, var(--outline-variant) 78%);
       }
       .group-head{
         display:flex;
@@ -1301,9 +1377,15 @@
       /* ── Backlog tab ── */
       .pool-row{
         display:flex;
-        gap: 10px;
+        gap: var(--space-3);
         flex-wrap:wrap;
-        margin-bottom: 12px;
+        align-items:center;
+        margin-bottom: var(--space-5);
+        padding: var(--space-4) var(--space-5);
+        background: color-mix(in srgb, var(--surface-container-low) 35%, var(--surface-container-lowest) 65%);
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--outline-variant);
+        box-shadow: var(--shadow-sm);
       }
       .pool{
         padding: 8px 12px;
@@ -1626,7 +1708,7 @@
 
       <main class="main">
         <header class="header">
-          <div class="header-title text-headline-lg" id="headerTitle">本周</div>
+          <div class="header-title" id="headerTitle">本周</div>
           <div class="header-right">
             <span id="todayStr">—</span>
             <button class="btn ghost" id="refreshBtn" type="button">刷新</button>
@@ -3983,7 +4065,7 @@
         const opsList = sortListTw('ops', opsTw);
 
         el.innerHTML = `
-          <div class="tw-topbar" style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;">
+          <div class="tw-topbar" style="display:flex;justify-content:flex-end;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;">
             <label class="tw-risk-filter" style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-size:14px;font-weight:650;color:var(--text-secondary);user-select:none;">
               <input type="checkbox" class="accent-primary" data-twriskonly ${app.thisWeekRiskOnly?'checked':''} style="width:16px;height:16px;"/>
               <span>仅显示风险项</span>
@@ -4930,15 +5012,14 @@
         }
 
         el.innerHTML = `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;">
-            <div class="pill-tabs" style="margin-bottom:0;">
+          <div class="versions-toolbar">
+            <div class="pill-tabs">
               ${plats.map(p=>`<div class="pill-tab ${p===app.versionsPlatform?'active':''}" data-plat="${p}">${platLabel(p)}</div>`).join('')}
             </div>
             <button class="btn primary" id="addVersionBtn" type="button">+ 新增版本</button>
           </div>
-          <div>
+          <div class="versions-list">
             ${versions.map(v=>{
-              const b = versionBadge(v.status);
               const expanded = !!app.versionsExpanded[v.id];
               const weekRange = weekRangeForVersion(v);
               const vTasks = tasks.filter(t=>{
@@ -4957,49 +5038,55 @@
                     <div class="version-num" data-open="version:${esc(v.id)}" style="cursor:pointer;">${esc(v.version_num || '')}</div>
                     ${statusSelectHTML('version', v)}
                     <span class="chip">${esc(platLabel(v.platform))}</span>
-                    <span style="margin-left:auto;color:var(--text-secondary);font-size:12px;">${esc(weekRange || '')}</span>
-                    <button class="btn" type="button" data-addtaskfor="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;">+ 新增功能</button>
-                    <button class="btn ghost" type="button" data-vcollapse="${esc(v.id)}" style="margin-left:8px;padding:6px 10px;" title="${expanded?'收起':'展开'}">${expanded?'▾':'▸'}</button>
+                    <div class="version-head-meta">
+                      ${weekRange ? `<span class="version-week-hint">${esc(weekRange)}</span>` : ``}
+                      <button class="btn" type="button" data-addtaskfor="${esc(v.id)}" style="padding:6px 10px;">+ 新增功能</button>
+                      <button class="btn ghost" type="button" data-vcollapse="${esc(v.id)}" style="padding:6px 10px;" title="${expanded?'收起':'展开'}">${expanded?'▾':'▸'}</button>
+                    </div>
                   </div>
                   <div class="version-tasks" style="display:${expanded?'block':'none'};">
-                    <div style="display:flex;align-items:center;justify-content:space-between;color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:0.04em;padding:4px 6px;">
-                      <span>新功能（${vNew.length}）</span>
-                      <span>Bug 修复（${vFix.length + vBugs.length}）</span>
-                    </div>
-                    <div style="display:grid;grid-template-columns:1fr;gap:10px;">
-                      <div>
-                        ${(vNew.map(t=>{
-                          const done = t.status==='done';
-                          return `
-                            <div class="chk-row" data-open="task:${esc(t.id)}">
-                              <span class="chk ${done?'done':''}">${done?'✓':''}</span>
-                              <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
-                              ${statusSelectHTML('task', t)}
-                            </div>
-                          `;
-                        }).join('')) || `<div style="color:var(--text-secondary);padding:6px 8px;">暂无新功能</div>`}
+                    <div class="version-task-grid">
+                      <div class="version-module">
+                        <div class="version-module-title">新功能（${vNew.length}）</div>
+                        ${(()=>{
+                          const rows = vNew.map(t=>{
+                            const done = t.status==='done';
+                            return `
+                              <div class="chk-row" data-open="task:${esc(t.id)}">
+                                <span class="chk ${done?'done':''}">${done?'✓':''}</span>
+                                <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
+                                ${statusSelectHTML('task', t)}
+                              </div>
+                            `;
+                          }).join('');
+                          return rows || `<div class="version-module-empty">暂无新功能</div>`;
+                        })()}
                       </div>
-                      <div>
-                        ${(vFix.map(t=>{
-                          const done = t.status==='done';
-                          return `
-                            <div class="chk-row" data-open="task:${esc(t.id)}">
-                              <span class="chk ${done?'done':''}">${done?'✓':''}</span>
-                              <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
-                              ${statusSelectHTML('task', t)}
-                            </div>
-                          `;
-                        }).join('')) || ``}
-                        ${(vBugs.map(bg=>{
-                          const badge = taskStatusBadge(bg.status || 'ns');
-                          return `
-                            <div class="chk-row" data-open="bug:${esc(bg.id)}">
-                              <span class="chk ${bg.status==='done'?'done':''}">${bg.status==='done'?'✓':''}</span>
-                              <span class="chk-name ${bg.status==='done'?'done':''}">${esc(bg.name || '未命名')}</span>
-                              ${statusSelectHTML('bug', bg)}
-                            </div>
-                          `;
-                        }).join('')) || `<div style="color:var(--text-secondary);padding:6px 8px;">暂无 Bug 修复</div>`}
+                      <div class="version-module">
+                        <div class="version-module-title">Bug 修复（${vFix.length + vBugs.length}）</div>
+                        ${(()=>{
+                          const fixPart = vFix.map(t=>{
+                            const done = t.status==='done';
+                            return `
+                              <div class="chk-row" data-open="task:${esc(t.id)}">
+                                <span class="chk ${done?'done':''}">${done?'✓':''}</span>
+                                <span class="chk-name ${done?'done':''}">${esc(t.name || '未命名')}</span>
+                                ${statusSelectHTML('task', t)}
+                              </div>
+                            `;
+                          }).join('');
+                          const bugPart = vBugs.map(bg=>{
+                            return `
+                              <div class="chk-row" data-open="bug:${esc(bg.id)}">
+                                <span class="chk ${bg.status==='done'?'done':''}">${bg.status==='done'?'✓':''}</span>
+                                <span class="chk-name ${bg.status==='done'?'done':''}">${esc(bg.name || '未命名')}</span>
+                                ${statusSelectHTML('bug', bg)}
+                              </div>
+                            `;
+                          }).join('');
+                          const all = fixPart + bugPart;
+                          return all || `<div class="version-module-empty">暂无 Bug 修复</div>`;
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -5268,7 +5355,7 @@
             const list = (byPhase.get(p.id) || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
             const isCurrent = !!p.is_current;
             return `
-              <div class="ms-group" style="${isCurrent?'background-color: var(--surface-container-low);':''}">
+              <div class="ms-group${isCurrent?' ms-group--current':''}">
                 <div class="group-head">
                   <span class="group-badge" data-open="phase:${esc(p.id)}" style="cursor:pointer;" title="点击编辑阶段">${esc(`${p.name || ''}·${phaseLabelForAxis(p) || ''}`.replace(/\s*·\s*$/,''))}</span>
                   <span style="color:var(--text-secondary);font-size:12px;">${esc(p.theme || '')}</span>
