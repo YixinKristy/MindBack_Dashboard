@@ -1239,19 +1239,68 @@
         background: var(--surface-raised);
         color: var(--text-primary);
       }
-      .versions-toolbar{
+      .versions-page{
         display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap: var(--space-4);
-        flex-wrap:wrap;
-        margin-bottom: var(--space-5);
-        padding: var(--space-4) var(--space-5);
-        background: color-mix(in srgb, var(--surface-container-low) 35%, var(--surface-container-lowest) 65%);
-        border-radius: var(--radius-lg);
-        box-shadow: var(--shadow-sm);
+        flex-direction:column;
+        gap: var(--space-5);
       }
-      .versions-toolbar .pill-tabs{ margin-bottom: 0; }
+      .versions-filter-section{
+        display:flex;
+        flex-direction:column;
+        gap: var(--space-2);
+      }
+      .versions-filter-heading{
+        display:flex;
+        align-items:baseline;
+        justify-content:space-between;
+        gap: var(--space-3);
+        flex-wrap:wrap;
+      }
+      .versions-filter-title{
+        font-size: 0.6875rem;
+        font-weight: 700;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: var(--on-surface-variant);
+      }
+      .versions-filter-current{
+        font-size: 0.8125rem;
+        color: var(--on-surface-variant);
+      }
+      .versions-filter-section .pill-tabs{
+        margin-bottom: 0;
+      }
+      .versions-filter-relation{
+        margin: 0;
+        max-width: 40rem;
+        font-size: 0.75rem;
+        line-height: 1.5;
+        color: var(--on-surface-variant);
+        opacity: 0.92;
+      }
+      .versions-primary-action{
+        display:flex;
+        justify-content:flex-end;
+      }
+      .versions-list-section{
+        display:flex;
+        flex-direction:column;
+        gap: var(--space-3);
+      }
+      .versions-list-heading{
+        font-family: var(--font-display);
+        font-size: 0.9375rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: var(--on-surface);
+        margin: 0;
+      }
+      .versions-list-heading .count{
+        font-family: var(--font-family);
+        font-weight: 600;
+        font-size: 0.8125rem;
+        color: var(--on-surface-variant);
+      }
       .versions-list{
         display:flex;
         flex-direction:column;
@@ -2915,13 +2964,13 @@
               <div class="label">关联版本 · Web</div>
               <select class="select" id="f_v_web">${versionSelectOptions('web', row.version_web_id)}</select>
             </div>
-          ` : ''}
-
-          ${kind==='task' ? `
             <div class="field">
               <div class="label">负责人</div>
               <input class="input" id="f_owners" value="${esc(ownersValue)}" placeholder="例如：择良, 黄镇威（逗号分隔）" />
             </div>
+          ` : ''}
+
+          ${kind==='task' ? `
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="field">
                 <div class="label">列入本周跟进</div>
@@ -3128,7 +3177,7 @@
             });
           }else if(kind==='ops'){
             applyLocal(kind, row.id, {
-              name, status, target_date: due, note, is_focus: focus,
+              name, status, target_date: due, note, is_focus: focus, owners: owners || [],
               is_risk: isRiskVal,
               risk_note: isRiskVal ? (riskNote || '') : '',
               version_ios_id: versBundle.version_ios_id,
@@ -3138,7 +3187,7 @@
             });
           }else if(kind==='bug'){
             applyLocal(kind, row.id, {
-              name, status, due_date: due, note, module, is_focus: focus,
+              name, status, due_date: due, note, module, is_focus: focus, owners: owners || [],
               is_risk: isRiskVal,
               risk_note: isRiskVal ? (riskNote || '') : '',
               version_ios_id: versBundle.version_ios_id,
@@ -3199,6 +3248,7 @@
             patch.target_date = due;
             patch.note = note;
             patch.is_focus = focus;
+            patch.owners = owners || [];
             if(isRiskVal !== null) patch.is_risk = isRiskVal;
             patch.risk_note = isRiskVal ? (riskNote || '') : '';
             patch.version_ios_id = versBundle.version_ios_id;
@@ -3212,6 +3262,7 @@
             patch.note = note;
             patch.module = module;
             patch.is_focus = focus;
+            patch.owners = owners || [];
             if(isRiskVal !== null) patch.is_risk = isRiskVal;
             patch.risk_note = isRiskVal ? (riskNote || '') : '';
             patch.version_ios_id = versBundle.version_ios_id;
@@ -3484,6 +3535,10 @@
               <select class="select" id="c_v_web">${versionSelectOptions('web', sel('web'))}</select>
             </div>
             <div class="field">
+              <div class="label">负责人</div>
+              <input class="input" id="c_owners" placeholder="逗号分隔多人" />
+            </div>
+            <div class="field">
               <div class="label">本周重点</div>
               <select class="select" id="c_is_focus">
                 <option value="false" selected>否</option>
@@ -3541,6 +3596,10 @@
             <div class="field">
               <div class="label">关联版本 · Web（可选）</div>
               <select class="select" id="c_v_web">${versionSelectOptions('web', sel('web'))}</select>
+            </div>
+            <div class="field">
+              <div class="label">负责人</div>
+              <input class="input" id="c_owners" placeholder="逗号分隔多人" />
             </div>
             <div class="field">
               <div class="label">本周重点</div>
@@ -3885,6 +3944,7 @@
               due_date: ($('c_due') && $('c_due').value.trim()) || '',
               module: ($('c_module') && $('c_module').value.trim()) || 'Bug',
               note: ($('c_note') && $('c_note').value) || '',
+              owners: ($('c_owners') && $('c_owners').value.split(',').map(s=>s.trim()).filter(Boolean)) || [],
               platforms: tv.platforms,
               source: 'user',
               version_id: tv.version_id,
@@ -3922,7 +3982,7 @@
               category: $('c_category').value,
               target_date: ($('c_target') && $('c_target').value.trim()) || '',
               channel: ($('c_channel') && $('c_channel').value.trim()) || '',
-              owners: [],
+              owners: ($('c_owners') && $('c_owners').value.split(',').map(s=>s.trim()).filter(Boolean)) || [],
               note: ($('c_note') && $('c_note').value) || '',
               is_archived: false,
               is_focus: $('c_is_focus').value === 'true',
@@ -5073,13 +5133,23 @@
         }
 
         el.innerHTML = `
-          <div class="versions-toolbar">
-            <div class="pill-tabs">
-              ${plats.map(p=>`<div class="pill-tab ${p===app.versionsPlatform?'active':''}" data-plat="${p}">${platLabel(p)}</div>`).join('')}
+          <div class="versions-page">
+            <section class="versions-filter-section" aria-label="按平台筛选版本列表">
+              <div class="versions-filter-heading">
+                <span class="versions-filter-title">平台筛选</span>
+                <span class="versions-filter-current">当前：${esc(platLabel(app.versionsPlatform))}</span>
+              </div>
+              <div class="pill-tabs">
+                ${plats.map(p=>`<div class="pill-tab ${p===app.versionsPlatform?'active':''}" data-plat="${p}">${platLabel(p)}</div>`).join('')}
+              </div>
+              <p class="versions-filter-relation">以下「版本列表」仅展示所选平台下的版本卡片；切换平台会立即筛选下方列表，不会改动任何版本数据。</p>
+            </section>
+            <div class="versions-primary-action">
+              <button class="btn primary" id="addVersionBtn" type="button">+ 新增版本</button>
             </div>
-            <button class="btn primary" id="addVersionBtn" type="button">+ 新增版本</button>
-          </div>
-          <div class="versions-list">
+            <section class="versions-list-section" aria-label="版本卡片列表">
+              <div class="versions-list-heading" id="versionsListHeading">${esc(platLabel(app.versionsPlatform))} 版本 <span class="count">· ${versions.length} 个</span></div>
+              <div class="versions-list">
             ${versions.map(v=>{
               const expanded = !!app.versionsExpanded[v.id];
               const weekRange = weekRangeForVersion(v);
@@ -5154,6 +5224,8 @@
                 </div>
               `;
             }).join('') || `<div class="section">暂无 ${platLabel(app.versionsPlatform)} 版本</div>`}
+              </div>
+            </section>
           </div>
         `;
 
