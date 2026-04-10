@@ -289,6 +289,7 @@
         transition: background-color var(--transition-base), color var(--transition-base);
         position: relative;
         user-select:none;
+        font-size: 0.875rem;
       }
       .nav-item:hover{
         background-color: var(--surface-container);
@@ -346,7 +347,7 @@
       }
       .header-title{
         font-family: var(--font-display);
-        font-size: 2rem;
+        font-size: 1.5rem;
         font-weight: 600;
         color: var(--on-surface);
       }
@@ -707,9 +708,10 @@
       }
       .overview-phase-bar{
         grid-area: phasebar;
-        background: var(--surface);
-        border-radius: var(--radius-lg);
-        padding: 16px 20px;
+        background-color: color-mix(in srgb, var(--primary-container) 45%, var(--surface-container-lowest) 55%);
+        border-radius: var(--radius-xl);
+        padding: var(--space-6) var(--space-8);
+        box-shadow: var(--shadow-md);
       }
       .overview-phase-bar[data-ovmonthsum="1"]{ cursor:pointer; }
       .overview-phase-bar[data-ovmonthsum="1"]:hover{
@@ -724,10 +726,10 @@
         margin-bottom:8px;
       }
       .overview-phase-bar-title{
-        font-weight:800;
-        font-size:15px;
+        font-weight:600;
+        font-size:1rem;
         letter-spacing:0.02em;
-        color:var(--text-primary);
+        color:var(--on-surface);
       }
       .overview-phase-bar-meta{
         font-size:13px;
@@ -746,23 +748,23 @@
       .kpi-row{
         display:grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 16px;
+        gap: var(--space-5);
       }
       .kpi-card{
         position: relative;
-        background-color: var(--surface-container-lowest);
+        background-color: color-mix(in srgb, var(--surface-container-low) 55%, var(--surface-container-lowest) 45%);
         border-radius: var(--radius-xl);
-        padding: var(--space-8);
+        padding: var(--space-6);
         box-shadow: var(--shadow-lg);
         cursor:pointer;
         transition: box-shadow var(--transition-base), transform var(--transition-base), background-color var(--transition-base);
-        min-height: 156px;
+        min-height: 128px;
         display:flex;
         flex-direction:column;
       }
       .kpi-card-main{ flex:1; min-height:0; }
       .kpi-card-more{
-        margin-top: 14px;
+        margin-top: var(--space-3);
         text-align: right;
         flex-shrink:0;
       }
@@ -778,22 +780,14 @@
         user-select:none;
       }
       .kpi-more-link:hover{ opacity: .8; }
-      .kpi-card::before{
-        content:'';
-        position:absolute;
-        left:0; right:0; top:0;
-        height:3px;
-        background: color-mix(in srgb, var(--outline-variant) 15%, transparent);
-        border-top-left-radius: var(--radius-xl);
-        border-top-right-radius: var(--radius-xl);
-      }
+      .kpi-card::before{ content:none; }
       .kpi-card:hover{
         transform: translateY(-2px);
         box-shadow: var(--shadow-float);
       }
-      .kpi-card.strip-primary::before{ background: var(--primary); }
-      .kpi-card.strip-secondary::before{ background: var(--success); }
-      .kpi-card.strip-error::before{ background: var(--error); }
+      .kpi-card.strip-primary::before{ content:none; }
+      .kpi-card.strip-secondary::before{ content:none; }
+      .kpi-card.strip-error::before{ content:none; }
 
       .kpi-h{ font-size: 0.6875rem; letter-spacing: 0.06em; text-transform: uppercase; color:var(--on-surface-variant); font-weight: 600; opacity:.6; }
       .kpi-title{
@@ -4564,7 +4558,7 @@
             </div>
             <div class="kpi-stack">
               <div class="kpi-row">
-                <div class="kpi-card strip-primary" data-ovcard="ms">
+                <div class="kpi-card" data-ovcard="ms">
                   <div class="kpi-card-main">
                     <div class="kpi-title text-title-sm">本周里程碑</div>
                     <div class="kpi-body-md" style="margin-top:10px;white-space:pre-wrap;line-height:1.35;">${esc(weekMsLabel)}</div>
@@ -4575,7 +4569,7 @@
                   </div>
                 </div>
 
-                <div class="kpi-card strip-secondary" data-ovcard="release">
+                <div class="kpi-card" data-ovcard="release">
                   <div class="kpi-card-main">
                     <div class="kpi-title text-title-sm">本周各端发布版本</div>
                     <div class="kpi-col">
@@ -4602,7 +4596,7 @@
                   </div>
                 </div>
 
-                <div class="kpi-card ${riskStrip} ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk" data-ovrisk-expandable="${riskCount>1?'1':'0'}">
+                <div class="kpi-card ${riskCount>0?'kpi-risk-bg':''}" data-ovcard="risk" data-ovrisk-expandable="${riskCount>1?'1':'0'}">
                   <div class="kpi-card-main">
                     <div class="kpi-title text-title-sm">本周风险</div>
                     ${riskCount===0 ? `
