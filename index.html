@@ -1246,30 +1246,28 @@
         min-width:0;
       }
       .ver-rel-item:hover{ background-color: var(--surface-container-high); transform: translateY(-1px); }
-      .ver-rel-left{
-        display:flex;
-        align-items:center;
-        gap: 10px;
-        min-width:0;
-        flex:1;
-      }
-      .ver-rel-date{
-        color: var(--text-disabled);
-        font-size: 12px;
-        flex-shrink:0;
-        max-width: 104px;
-        overflow:hidden;
-        white-space:nowrap;
-        text-overflow:ellipsis;
-      }
       .ver-rel-name{
+        flex: 1 1 0;
+        min-width: 0;
         font-size: 14px;
         font-weight: 500;
         color: var(--text-primary);
-        overflow:hidden;
-        white-space:nowrap;
-        text-overflow:ellipsis;
-        min-width:0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .ver-rel-owners{
+        flex: 0 1 120px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        text-align: right;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      @media (max-width: 720px){
+        .ver-rel-owners{ flex-basis: 88px; max-width: 88px; }
       }
       .ver-related .badge{ flex-shrink:0; white-space:nowrap; }
 
@@ -5044,13 +5042,12 @@
               <div class="ver-rel-list">
                 ${rows.map(r=>{
                   const badge = (kind==='ops') ? opsStatusBadge(r.status) : taskStatusBadge(r.status);
-                  const sub = (kind==='ops') ? formatDateOrRange(r.target_date || '') : (r.due_date || '');
+                  const ownersStr = formatOwnersDisplay(r);
+                  const name = r.name || '未命名';
                   return `
                     <div class="ver-rel-item" data-open="${kind}:${esc(r.id)}">
-                      <div class="ver-rel-left">
-                        <span class="ver-rel-date">${sub ? esc(sub) : '—'}</span>
-                        <span class="ver-rel-name">${esc(r.name || '未命名')}</span>
-                      </div>
+                      <span class="ver-rel-name" title="${esc(name)}">${esc(name)}</span>
+                      <span class="ver-rel-owners" title="${esc(ownersStr)}">${esc(ownersStr)}</span>
                       <span class="badge ${esc(badge.cls)}">${esc(badge.label)}</span>
                     </div>
                   `;
