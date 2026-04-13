@@ -2257,6 +2257,67 @@
         }
         return 'M' + (max + 1);
       }
+      /** 里程碑 Tab：与总览相同的时间线（含周缺口），展开态用 app.milestoneExpanded */
+      function buildMilestoneTabListHtml(phase, timeline, tasks, bugsAll, opsAll){
+        app.milestoneExpanded = app.milestoneExpanded || {};
+        const pid = phase?.id;
+        if(!timeline || !timeline.length){
+          return `<div style="color:var(--text-secondary)">暂无</div>`;
+        }
+        return timeline.map((item)=>{
+          if(item.type==='gap'){
+            const wsStr = ymd(item.weekStart);
+            const slash = formatSlashRange(wsStr);
+            return `
+              <div class="ms-row ms-row--gap">
+                <div class="ms-left">
+                  <span class="ms-date">${esc(slash || wsStr)}</span>
+                  <span class="ms-name" style="color:var(--text-secondary);">（本周空缺）</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <button class="btn ghost" type="button" data-ms-fill-gap="${esc(wsStr)}" data-ms-phase="${esc(String(pid))}">补录该周</button>
+                </div>
+              </div>`;
+          }
+          const m = item.m;
+          const d = m.date_short || m.date_full || '—';
+          const doneCls = m.status==='done' ? 'done' : '';
+          const expanded = !!app.milestoneExpanded[String(m.id)];
+          const { start: msS, end: msE } = parseMilestoneRange(m);
+          const matchByWeek = (row)=>{
+            const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
+            const { start, end } = parseRangeYmd(raw);
+            if(!start || !end || !msS || !msE) return false;
+            return rangesOverlap(start, end, msS, msE);
+          };
+          const weekTasks = tasks.filter(t=> matchByWeek(t));
+          const weekBugs = bugsAll.filter(bg=> matchByWeek(bg));
+          const weekOps = opsAll.filter(o=> matchByWeek(o));
+          const cnt = weekTasks.length + weekBugs.length + weekOps.length;
+          return `
+                      <div class="ms-row" data-open="milestone:${esc(m.id)}">
+                        <div class="ms-left">
+                          <span class="ms-date">${esc(d)}</span>
+                          <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
+                        </div>
+                        <div style="display:flex;align-items:center;gap:10px;">
+                          <button class="btn ghost" type="button" data-msexpand="${esc(m.id)}" title="${expanded?'收起':'展开'}" style="padding:6px 10px;">${expanded?'▾':'▸'} ${cnt}</button>
+                          ${statusSelectHTML('milestone', m)}
+                        </div>
+                      </div>
+                      ${expanded ? `
+                        <div style="padding:10px 12px 6px 12px;">
+                          ${weekTasks.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">功能（${weekTasks.length}）</div>` : ``}
+                          ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
+                          ${weekBugs.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">Bug（${weekBugs.length}）</div>` : ``}
+                          ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
+                          ${weekOps.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">运营（${weekOps.length}）</div>` : ``}
+                          ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
+                          ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:12px;">该周暂无已排期事项（请在全量任务里编辑时间范围）</div>` : ``}
+                        </div>
+                      ` : ``}`;
+        }).join('');
+      }
       function rangesOverlap(aStart, aEnd, bStart, bEnd){
         if(!(aStart instanceof Date) || !(aEnd instanceof Date) || !(bStart instanceof Date) || !(bEnd instanceof Date)) return false;
         const as = new Date(aStart.getFullYear(), aStart.getMonth(), aStart.getDate()).getTime();
@@ -6116,54 +6177,20 @@
 
           ${phases.map(p=>{
             const list = (byPhase.get(p.id) || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+            const timeline = buildOverviewMilestoneTimeline(list);
+            const listHtml = buildMilestoneTabListHtml(p, timeline, tasks, bugsAll, opsAll);
             const isCurrent = !!p.is_current;
             return `
               <div class="ms-group${isCurrent?' ms-group--current':''}">
                 <div class="group-head">
                   <span class="group-badge" data-open="phase:${esc(p.id)}" style="cursor:pointer;" title="点击编辑阶段">${esc(`${p.name || ''}·${phaseLabelForAxis(p) || ''}`.replace(/\s*·\s*$/,''))}</span>
-                  <span style="color:var(--text-secondary);font-size:12px;">${esc(p.theme || '')}</span>
+                  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+                    <span style="color:var(--text-secondary);font-size:12px;">${esc(p.theme || '')}</span>
+                    <button class="btn ghost" type="button" data-add-milestone-phase="${esc(String(p.id))}" style="padding:6px 12px;font-size:12px;flex-shrink:0;">+ 新增里程碑</button>
+                  </div>
                 </div>
                 <div class="milestone-list">
-                  ${list.map(m=>{
-                    const b = taskStatusBadge(msStatusToTaskStatus(m.status));
-                    const d = m.date_short || m.date_full || '—';
-                    const doneCls = m.status==='done' ? 'done' : '';
-                    const expanded = !!app.milestoneExpanded[String(m.id)];
-                    const { start: msS, end: msE } = parseMilestoneRange(m);
-                    const matchByWeek = (row)=>{
-                      const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
-                      const { start, end } = parseRangeYmd(raw);
-                      if(!start || !end || !msS || !msE) return false;
-                      return rangesOverlap(start, end, msS, msE);
-                    };
-                    const weekTasks = tasks.filter(t=> matchByWeek(t));
-                    const weekBugs = bugsAll.filter(bg=> matchByWeek(bg));
-                    const weekOps = opsAll.filter(o=> matchByWeek(o));
-                    const cnt = weekTasks.length + weekBugs.length + weekOps.length;
-                    return `
-                      <div class="ms-row" data-open="milestone:${esc(m.id)}">
-                        <div class="ms-left">
-                          <span class="ms-date">${esc(d)}</span>
-                          <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
-                        </div>
-                        <div style="display:flex;align-items:center;gap:10px;">
-                          <button class="btn ghost" type="button" data-msexpand="${esc(m.id)}" title="${expanded?'收起':'展开'}" style="padding:6px 10px;">${expanded?'▾':'▸'} ${cnt}</button>
-                          ${statusSelectHTML('milestone', m)}
-                        </div>
-                      </div>
-                      ${expanded ? `
-                        <div style="padding:10px 12px 6px 12px;">
-                          ${weekTasks.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin-bottom:6px;">功能（${weekTasks.length}）</div>` : ``}
-                          ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
-                          ${weekBugs.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">Bug（${weekBugs.length}）</div>` : ``}
-                          ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
-                          ${weekOps.length ? `<div style="color:var(--text-secondary);font-size:12px;font-weight:850;letter-spacing:.04em;margin:10px 0 6px;">运营（${weekOps.length}）</div>` : ``}
-                          ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:8px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
-                          ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:12px;">该周暂无已排期事项（请在全量任务里编辑时间范围）</div>` : ``}
-                        </div>
-                      ` : ``}
-                    `;
-                  }).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                  ${listHtml}
                 </div>
               </div>
             `;
@@ -6183,6 +6210,27 @@
             if(!id) return;
             app.milestoneExpanded[String(id)] = !app.milestoneExpanded[String(id)];
             render();
+          });
+        });
+        el.querySelectorAll('[data-add-milestone-phase]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const pid = x.getAttribute('data-add-milestone-phase');
+            openCreateModalWithDefaults('milestone', {
+              week_start: ymd(startOfWeekMonday(new Date())),
+              phase_id: pid != null && pid !== '' ? Number(pid) : app.board?.currentPhase?.id,
+            });
+          });
+        });
+        el.querySelectorAll('[data-ms-fill-gap]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const ws = x.getAttribute('data-ms-fill-gap');
+            const pid = x.getAttribute('data-ms-phase');
+            openCreateModalWithDefaults('milestone', {
+              week_start: (ws || '').trim(),
+              phase_id: pid != null && pid !== '' ? Number(pid) : app.board?.currentPhase?.id,
+            });
           });
         });
         el.querySelectorAll('[data-statuspick]').forEach(x=>{
