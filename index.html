@@ -714,6 +714,30 @@
       }
       .row-item.bug::before{ background-color: var(--error); }
       .row-item.ops::before{ background-color: var(--success); }
+      /* 本周 · 跟进事项：名称 + 负责人双行 */
+      .row-item.tw-follow-row{
+        height: auto;
+        min-height: 44px;
+        padding: 8px 12px;
+        align-items: center;
+      }
+      .tw-follow-row-body{
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        justify-content: center;
+      }
+      .tw-follow-owners{
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        letter-spacing: 0.02em;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
       .row-name{
         font-size: 14px;
         font-weight: 700;
@@ -4887,8 +4911,11 @@
                 </div>
                 <div class="list">
                   ${devList.map(t=>`
-                    <div class="row-item dev" data-open="task:${esc(t.id)}" data-drag="task:${esc(t.id)}" draggable="${sortKeyFor('task')==='manual'?'true':'false'}">
-                      <div class="row-name">${esc(t.name || '未命名')}</div>
+                    <div class="row-item dev tw-follow-row" data-open="task:${esc(t.id)}" data-drag="task:${esc(t.id)}" draggable="${sortKeyFor('task')==='manual'?'true':'false'}">
+                      <div class="tw-follow-row-body">
+                        <div class="row-name">${esc(t.name || '未命名')}</div>
+                        <div class="tw-follow-owners" title="${esc(formatOwnersDisplay(t))}">负责人 ${esc(formatOwnersDisplay(t))}</div>
+                      </div>
                       <div class="dot ${esc(dotCls(t.status))}"></div>
                     </div>
                   `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
@@ -4905,8 +4932,11 @@
                 </div>
                 <div class="list">
                   ${bugList.map(b=>`
-                    <div class="row-item bug" data-open="bug:${esc(b.id)}" data-drag="bug:${esc(b.id)}" draggable="${sortKeyFor('bug')==='manual'?'true':'false'}">
-                      <div class="row-name">${esc(b.name || '未命名')}</div>
+                    <div class="row-item bug tw-follow-row" data-open="bug:${esc(b.id)}" data-drag="bug:${esc(b.id)}" draggable="${sortKeyFor('bug')==='manual'?'true':'false'}">
+                      <div class="tw-follow-row-body">
+                        <div class="row-name">${esc(b.name || '未命名')}</div>
+                        <div class="tw-follow-owners" title="${esc(formatOwnersDisplay(b))}">负责人 ${esc(formatOwnersDisplay(b))}</div>
+                      </div>
                       <div class="dot ${esc(dotCls(b.status))}"></div>
                     </div>
                   `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
@@ -4923,8 +4953,11 @@
                 </div>
                 <div class="list">
                   ${opsList.map(o=>`
-                    <div class="row-item ops" data-open="ops:${esc(o.id)}" data-drag="ops:${esc(o.id)}" draggable="${sortKeyFor('ops')==='manual'?'true':'false'}">
-                      <div class="row-name">${esc(o.name || '未命名')}</div>
+                    <div class="row-item ops tw-follow-row" data-open="ops:${esc(o.id)}" data-drag="ops:${esc(o.id)}" draggable="${sortKeyFor('ops')==='manual'?'true':'false'}">
+                      <div class="tw-follow-row-body">
+                        <div class="row-name">${esc(o.name || '未命名')}</div>
+                        <div class="tw-follow-owners" title="${esc(formatOwnersDisplay(o))}">负责人 ${esc(formatOwnersDisplay(o))}</div>
+                      </div>
                       <div class="dot ${esc(dotCls(o.status))}"></div>
                     </div>
                   `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
