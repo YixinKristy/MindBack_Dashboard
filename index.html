@@ -3210,6 +3210,14 @@
             </div>
           ` : ''}
 
+          ${kind==='backlog' ? `
+            <div class="field">
+              <div class="label">转入后的排期（周 / 日期范围）</div>
+              <input class="input" id="f_bl_move_range" value="${esc(row.due_date || '')}" placeholder="点击选择；不填则使用上方「计划日期/周」" readonly />
+              <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">仅用于「转入」操作，不会随「保存」写入 Backlog。与当前自然周有交集时，任务会自动列入「本周」。</div>
+            </div>
+          ` : ''}
+
           <div class="field">
             <div class="label">${kind==='version' ? '发布说明（Release notes）' : '备注'}</div>
             <textarea class="textarea" id="f_note" placeholder="${kind==='version' ? '对外/发布说明…' : '点击添加备注…'}">${esc(noteValue)}</textarea>
@@ -3220,7 +3228,7 @@
         const moveBtn = (kind==='task')
           ? `<button class="btn ghost" id="drawerMove" type="button">移至 Backlog</button>`
           : (kind==='backlog')
-            ? `<button class="btn ghost" id="drawerToWeek" type="button">→ 移入本周</button>`
+            ? `<button class="btn ghost" id="drawerToWeek" type="button">→ 转入对应周</button>`
             : `<button class="btn ghost" type="button" disabled style="opacity:.55;cursor:not-allowed;">—</button>`;
         const delBtn = (kind==='milestone' || kind==='version')
           ? `<button class="btn danger" type="button" disabled style="opacity:.55;cursor:not-allowed;">删除</button>`
@@ -3266,6 +3274,14 @@
           if(t){
             t.addEventListener('click', ()=>{
               openDateOrRangePicker('f_due');
+            });
+          }
+        }
+        if(kind==='backlog'){
+          const mr = $('f_bl_move_range');
+          if(mr){
+            mr.addEventListener('click', ()=>{
+              openDateOrRangePicker('f_bl_move_range');
             });
           }
         }
@@ -4333,6 +4349,15 @@
         }
       }
 
+      function backlogRangeOverlapsCurrentWeek(raw){
+        const now = new Date();
+        const wS = startOfWeekMonday(now);
+        const wE = endOfWeekSunday(now);
+        const { start, end } = parseRangeYmd(raw || '');
+        if(!start || !end) return false;
+        return rangesOverlap(start, end, wS, wE);
+      }
+
       async function moveBacklogToThisWeek(){
         const { row } = app.drawer;
         if(!row) return;
@@ -4343,10 +4368,12 @@
         const vAnd = row.version_android_id ?? null;
         const vWeb = row.version_web_id ?? null;
         const vId = row.version_id ?? null;
-        const due = row.due_date || '';
+        const moveRangeRaw = ($('f_bl_move_range') && $('f_bl_move_range').value.trim()) || '';
+        const due = moveRangeRaw || (row.due_date || '');
         const note = row.note || '';
         const mod = row.module || '';
         const src = row.source || 'internal';
+        const taskThisWeek = backlogRangeOverlapsCurrentWeek(due);
         try{
           let created = null;
           if(ik === 'bug'){
@@ -4410,7 +4437,7 @@
               platforms: plats,
               source: src,
               note,
-              this_week: true,
+              this_week: taskThisWeek,
               moved_from_backlog_id: row.id,
               module: mod,
               due_date: due,
@@ -4435,9 +4462,10 @@
             toast('bad','创建失败');
             return;
           }
-          const okMsg = ik === 'task' ? '已移入本周任务并归档 Backlog'
-            : ik === 'bug' ? '已转为 Bug 并归档 Backlog'
-            : '已转为运营项并归档 Backlog';
+          const okMsg = ik === 'task'
+            ? (taskThisWeek ? '已转入本周任务并归档 Backlog' : '已转入任务并归档 Backlog（排期已写入）')
+            : ik === 'bug' ? '已转为 Bug 并归档 Backlog（排期已写入）'
+            : '已转为运营项并归档 Backlog（排期已写入）';
           toast('ok', okMsg);
           await refreshRemote();
           closeDrawer();
