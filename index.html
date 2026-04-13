@@ -1549,6 +1549,12 @@
       }
       .pool:hover{ background: var(--surface-raised); color: var(--text-primary); }
       .pool.active{ background: var(--surface-raised); color: var(--text-primary); }
+      .pool.drop-over{
+        outline: 2px solid var(--primary);
+        outline-offset: 2px;
+        background-color: var(--primary-container);
+        color: var(--on-primary-container);
+      }
       .backlog-list .bl-row{
         background: var(--surface);
         border-radius: var(--radius-lg);
@@ -1561,6 +1567,14 @@
         transition: background .15s ease;
       }
       .backlog-list .bl-row:hover{ background: var(--surface-raised); }
+      .backlog-list .bl-row[draggable="true"]{
+        cursor: grab;
+        user-select: none;
+      }
+      .backlog-list .bl-row[draggable="true"]:active{ cursor: grabbing; }
+      .backlog-list .bl-row.bl-dragging{
+        opacity: 0.45;
+      }
       .pri-dot{
         width: 10px;
         height: 10px;
@@ -1992,6 +2006,7 @@
         datePicker: { open:false, targetId:null },
         overviewRiskShowAll: false, // 总览「本周风险」多条时，点击卡片展开全部
         thisWeekRiskOnly: false,    // 「本周」仅展示 is_risk 项
+        _backlogDragEndTs: 0,       // 避免拖完后误触打开抽屉
       };
 
       const TABS = [
@@ -5927,6 +5942,43 @@
         });
       }
 
+      async function backlogSetPhase(backlogId, phaseId){
+        const pid = Number(phaseId);
+        if(!Number.isFinite(pid)){
+          toast('bad', '无效阶段');
+          return;
+        }
+        const row = findRow('backlog', backlogId);
+        if(!row){
+          toast('bad', '未找到 Backlog');
+          return;
+        }
+        const cur = row.phase_id != null && row.phase_id !== '' ? Number(row.phase_id) : null;
+        if(cur === pid){
+          toast('warn', '已在该阶段');
+          return;
+        }
+        applyLocal('backlog', backlogId, { phase_id: pid });
+        render();
+        saveLocalDraft();
+        try{
+          await patchById('backlog', 'id', backlogId, { phase_id: pid });
+          toast('ok', '已移到新阶段');
+          saveLocalDraft();
+        }catch(e){
+          console.warn(e);
+          enqueue({ op:'patch', table:'backlog', idField:'id', idValue: backlogId, patch:{ phase_id: pid } });
+          saveLocalDraft();
+          if(String(e.message||'').includes('not_authenticated')){
+            toast('warn', '未登录：已在前端生效，待登录后同步');
+          }else if(e && (e.status===401 || e.status===403)){
+            toast('warn', 'RLS 未放开：已在前端生效，待修复后同步');
+          }else{
+            toast('warn', '网络失败：已在前端生效，待同步');
+          }
+        }
+      }
+
       function renderBacklog(el){
         const phases = app.board.phases || [];
         const backlog = (app.board.backlog || []).filter(x=>x && !x.is_archived);
@@ -5971,7 +6023,7 @@
               const verHint = formatBacklogVersionHint(x);
               const platStr = (backlogPlatformsFromVersions(x).slice(0,3).join('/') || (x.platforms||[]).slice(0,2).join('/')).toUpperCase();
               return `
-                <div class="bl-row" data-open="backlog:${esc(x.id)}">
+                <div class="bl-row" draggable="true" data-drag-backlog="${esc(x.id)}" data-open="backlog:${esc(x.id)}" title="拖到上方阶段 pill 即可更换阶段">
                   <span class="pri-dot ${esc(pd)}"></span>
                   <span class="bl-name">${esc(x.name || '未命名')}</span>
                   <div class="bl-tags">
@@ -5992,6 +6044,24 @@
             app.backlogPhase = Number(x.getAttribute('data-pool'));
             render();
           });
+          x.addEventListener('dragover', (ev)=>{
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = 'move';
+            x.classList.add('drop-over');
+          });
+          x.addEventListener('dragleave', ()=>{
+            x.classList.remove('drop-over');
+          });
+          x.addEventListener('drop', (ev)=>{
+            ev.preventDefault();
+            x.classList.remove('drop-over');
+            const raw = ev.dataTransfer.getData('application/x-mindback-backlog') || ev.dataTransfer.getData('text/plain');
+            const bid = raw ? Number(raw.trim()) : NaN;
+            const ph = Number(x.getAttribute('data-pool'));
+            if(Number.isFinite(bid) && Number.isFinite(ph)){
+              backlogSetPhase(bid, ph).catch(err=>{ console.warn(err); });
+            }
+          });
         });
         const allChip = el.querySelector('[data-backlog-all="1"]');
         if(allChip){
@@ -6006,8 +6076,29 @@
         }
         el.querySelectorAll('[data-open]').forEach(x=>{
           x.addEventListener('click', ()=>{
-            const [kind, id] = x.getAttribute('data-open').split(':');
+            const open = x.getAttribute('data-open') || '';
+            if(open.startsWith('backlog:') && (Date.now() - (app._backlogDragEndTs || 0)) < 500){
+              return;
+            }
+            const [kind, id] = open.split(':');
             openDrawerByKey(kind, id);
+          });
+        });
+        el.querySelectorAll('[data-drag-backlog]').forEach(x=>{
+          x.addEventListener('dragstart', (ev)=>{
+            const id = x.getAttribute('data-drag-backlog');
+            if(!id) return;
+            try{
+              ev.dataTransfer.setData('application/x-mindback-backlog', String(id));
+              ev.dataTransfer.setData('text/plain', String(id));
+              ev.dataTransfer.effectAllowed = 'move';
+            }catch(_e){}
+            x.classList.add('bl-dragging');
+          });
+          x.addEventListener('dragend', ()=>{
+            x.classList.remove('bl-dragging');
+            app._backlogDragEndTs = Date.now();
+            el.querySelectorAll('.pool.drop-over').forEach(p=> p.classList.remove('drop-over'));
           });
         });
         $('addBacklogBtn').addEventListener('click', ()=> openCreateModal('backlog'));
