@@ -2172,6 +2172,91 @@
         const d = parseYmdLocal(s);
         return { start:d, end:d };
       }
+      function guessOverviewYear(){
+        const raw = String(app?.board?.currentPhase?.month_range || '').trim();
+        const m = raw.match(/(\d{4})/);
+        if(m) return Number(m[1]);
+        return new Date().getFullYear();
+      }
+      function parseSlashMdWeekRange(s, year){
+        const t = String(s||'').trim();
+        if(!t) return { start:null, end:null };
+        const norm = t.replace(/–|—/g, '-');
+        const mm = norm.match(/^(\d{1,2})\/(\d{1,2})-(\d{1,2})\/(\d{1,2})$/);
+        if(mm){
+          const ds = new Date(year, Number(mm[1])-1, Number(mm[2]));
+          let de = new Date(year, Number(mm[3])-1, Number(mm[4]));
+          if(ds.getMonth() !== Number(mm[1])-1 || ds.getDate() !== Number(mm[2])) return { start:null, end:null };
+          if(de.getMonth() !== Number(mm[3])-1 || de.getDate() !== Number(mm[4])) return { start:null, end:null };
+          if(de.getTime() < ds.getTime()){
+            de = new Date(year+1, Number(mm[3])-1, Number(mm[4]));
+          }
+          return { start: ds, end: de };
+        }
+        const sm = norm.match(/^(\d{1,2})\/(\d{1,2})$/);
+        if(sm){
+          const d = new Date(year, Number(sm[1])-1, Number(sm[2]));
+          if(d.getMonth() !== Number(sm[1])-1 || d.getDate() !== Number(sm[2])) return { start:null, end:null };
+          return { start:d, end:d };
+        }
+        return { start:null, end:null };
+      }
+      function parseMilestoneRange(m){
+        if(!m) return { start:null, end:null };
+        const rawFull = String(m.date_full||'').trim();
+        const rawShort = String(m.date_short||'').trim();
+        let r = parseRangeYmd(rawFull);
+        if(r.start && r.end) return r;
+        r = parseRangeYmd(rawShort);
+        if(r.start && r.end) return r;
+        const y = guessOverviewYear();
+        r = parseSlashMdWeekRange(rawFull, y);
+        if(r.start && r.end) return r;
+        return parseSlashMdWeekRange(rawShort, y);
+      }
+      function milestoneWeekStartFromRange(m){
+        const { start } = parseMilestoneRange(m);
+        if(!start) return null;
+        return startOfWeekMonday(start);
+      }
+      function buildOverviewMilestoneTimeline(phaseMilestones){
+        const list = (phaseMilestones || []).filter(Boolean);
+        const withWs = [];
+        const noWs = [];
+        for(const m of list){
+          const ws = milestoneWeekStartFromRange(m);
+          if(ws) withWs.push({ m, ws });
+          else noWs.push(m);
+        }
+        withWs.sort((a,b)=> a.ws.getTime() - b.ws.getTime());
+        const rows = [];
+        for(let i=0;i<withWs.length;i++){
+          if(i > 0){
+            let gapStart = new Date(withWs[i-1].ws);
+            gapStart.setDate(gapStart.getDate() + 7);
+            while(gapStart.getTime() < withWs[i].ws.getTime()){
+              rows.push({ type:'gap', weekStart: new Date(gapStart) });
+              gapStart.setDate(gapStart.getDate() + 7);
+            }
+          }
+          rows.push({ type:'ms', m: withWs[i].m });
+        }
+        noWs.sort((a,b)=>(a.sort_order||0)-(b.sort_order||0));
+        for(const m of noWs){
+          rows.push({ type:'ms', m });
+        }
+        return rows;
+      }
+      function nextMilestoneId(){
+        const list = app.board?.milestones || [];
+        let max = 0;
+        for(const m of list){
+          const id = String(m?.id||'');
+          const n = /^M(\d+)$/.exec(id);
+          if(n) max = Math.max(max, Number(n[1]));
+        }
+        return 'M' + (max + 1);
+      }
       function rangesOverlap(aStart, aEnd, bStart, bEnd){
         if(!(aStart instanceof Date) || !(aEnd instanceof Date) || !(bStart instanceof Date) || !(bEnd instanceof Date)) return false;
         const as = new Date(aStart.getFullYear(), aStart.getMonth(), aStart.getDate()).getTime();
@@ -3902,6 +3987,26 @@
             </div>
           `;
         }
+        if(kind === 'milestone'){
+          const wstart = d.week_start || ymd(startOfWeekMonday(new Date()));
+          const phaseId = d.phase_id != null ? d.phase_id : (app.board?.currentPhase?.id ?? '');
+          const st = d.status_task ? String(d.status_task) : 'ns';
+          return `
+            <input type="hidden" id="c_phase_id" value="${esc(String(phaseId))}" />
+            <div class="field">
+              <div class="label">所属周（周一）</div>
+              <input class="input" id="c_week_start" value="${esc(wstart)}" placeholder="点击选择周范围…" readonly />
+            </div>
+            <div class="field">
+              <div class="label">里程碑标题</div>
+              <input class="input" id="c_name" placeholder="例如：站点上线 · 分享与 OB 优化" />
+            </div>
+            <div class="field">
+              <div class="label">状态</div>
+              <select class="select" id="c_status">${statusOptions('milestone', st)}</select>
+            </div>
+          `;
+        }
         return '';
       }
 
@@ -3910,7 +4015,7 @@
           toast('bad', '数据未加载');
           return;
         }
-        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本', month_goal:'编辑月目标' };
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本', month_goal:'编辑月目标', milestone:'新建里程碑' };
         app.pendingCreateKind = kind;
         app.pendingCreateDefaults = null;
         $('createModalTitle').textContent = titles[kind] || '新建';
@@ -3944,6 +4049,12 @@
             }
           });
         });
+        if(kind==='milestone'){
+          const wk = $('c_week_start');
+          if(wk){
+            wk.addEventListener('click', ()=> openWeekPicker('c_week_start'));
+          }
+        }
         setTimeout(()=>{ const n = $('c_name'); if(n) n.focus(); }, 0);
       }
 
@@ -3952,7 +4063,7 @@
           toast('bad', '数据未加载');
           return;
         }
-        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本', month_goal:'编辑月目标' };
+        const titles = { task:'新建功能任务', bug:'新建 Bug', ops:'新建运营动作', backlog:'新建 Backlog', version:'新建版本', month_goal:'编辑月目标', milestone:'新建里程碑' };
         app.pendingCreateKind = kind;
         app.pendingCreateDefaults = defaults && typeof defaults === 'object' ? defaults : null;
         $('createModalTitle').textContent = titles[kind] || '新建';
@@ -3996,6 +4107,12 @@
             wk.addEventListener('click', ()=>{
               openWeekPicker('c_week_start');
             });
+          }
+        }
+        if(kind==='milestone'){
+          const wk = $('c_week_start');
+          if(wk){
+            wk.addEventListener('click', ()=> openWeekPicker('c_week_start'));
           }
         }
       }
@@ -4170,6 +4287,69 @@
               console.warn(e);
               enqueue({ op:'insert', table:'versions', row, tempId: tmpId });
               toast('warn','已在前端新增版本，待同步后端');
+            }
+            return;
+          }
+          if(kind === 'milestone'){
+            const title = ($('c_name') && $('c_name').value.trim()) || '';
+            if(!title){
+              toast('bad','请填写里程碑标题');
+              return;
+            }
+            const wsRaw = ($('c_week_start') && $('c_week_start').value.trim()) || '';
+            if(!wsRaw){
+              toast('bad','请选择所属周（周一）');
+              return;
+            }
+            const monday0 = parseYmdLocal(wsRaw);
+            if(!monday0){
+              toast('bad','周起始日期无效');
+              return;
+            }
+            const wsD = startOfWeekMonday(monday0);
+            const wsStr = ymd(wsD);
+            const weD = new Date(wsD); weD.setDate(weD.getDate()+6);
+            const date_full = `${wsStr}~${ymd(weD)}`;
+            const date_short = formatSlashRange(wsStr);
+            const pidRaw = ($('c_phase_id') && $('c_phase_id').value.trim()) || '';
+            const phase_id = Number(pidRaw || app.board?.currentPhase?.id);
+            if(!Number.isFinite(phase_id)){
+              toast('bad','缺少所属阶段');
+              return;
+            }
+            const phaseMs = (app.board.milestones||[]).filter(m=> m && String(m.phase_id)===String(phase_id));
+            let maxSo = 0;
+            for(const m of phaseMs) maxSo = Math.max(maxSo, Number(m.sort_order)||0);
+            const taskSt = ($('c_status') && $('c_status').value) || 'ns';
+            const id = nextMilestoneId();
+            const row = {
+              id,
+              num: id,
+              month: '',
+              date_short,
+              date_full,
+              title,
+              tags: [],
+              cost: '',
+              status: taskStatusToMsStatus(taskSt),
+              features: '',
+              sort_order: maxSo + 1,
+              phase_id,
+            };
+            app.board.milestones = app.board.milestones || [];
+            app.board.milestones.push({ ...row });
+            closeCreateModal();
+            render();
+            saveLocalDraft();
+            try{
+              await insertRow('milestones', row);
+              toast('ok','已新增里程碑');
+              saveLocalDraft();
+              await refreshRemote();
+            }catch(e){
+              console.warn(e);
+              enqueue({ op:'insert', table:'milestones', row });
+              toast('warn','已在前端新增里程碑，待同步后端');
             }
             return;
           }
@@ -4945,7 +5125,7 @@
         });
 
         const weekMs = (milestones || []).find(m=>{
-          const { start: msS, end: msE } = parseRangeYmd(m?.date_full || m?.date_short || '');
+          const { start: msS, end: msE } = parseMilestoneRange(m);
           if(!msS || !msE) return false;
           return rangesOverlap(msS, msE, wStart, wEnd);
         }) || null;
@@ -4953,7 +5133,7 @@
         const weekMsDateStr = ((weekMs?.date_short || weekMs?.date_full || '').trim() || '—');
         const weekMsTaskCnt = (()=>{
           if(!weekMs) return 0;
-          const { start: msS, end: msE } = parseRangeYmd(weekMs.date_full || weekMs.date_short || '');
+          const { start: msS, end: msE } = parseMilestoneRange(weekMs);
           if(!msS || !msE) return 0;
           const matchOverlap = (row)=>{
             const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
@@ -4966,7 +5146,7 @@
 
         const monthSummary = (()=>{
           const ranges = msInCurrentPhase.map(m=>{
-            const { start, end } = parseRangeYmd(m?.date_full || m?.date_short || '');
+            const { start, end } = parseMilestoneRange(m);
             if(!start || !end) return null;
             return { start, end };
           }).filter(Boolean);
@@ -5150,6 +5330,64 @@
             </div>
           `;
         }
+        app.overviewMilestoneExpanded = app.overviewMilestoneExpanded || {};
+        const overviewMilestoneTimeline = buildOverviewMilestoneTimeline(msInCurrentPhase);
+        const overviewMilestoneListHtml = overviewMilestoneTimeline.map((item)=>{
+          if(item.type==='gap'){
+            const wsStr = ymd(item.weekStart);
+            const slash = formatSlashRange(wsStr);
+            return `
+              <div class="ms-row ms-row--gap">
+                <div class="ms-left">
+                  <span class="ms-date">${esc(slash || wsStr)}</span>
+                  <span class="ms-name" style="color:var(--text-secondary);">（本周空缺）</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <button class="btn ghost" type="button" data-fill-gap-week="${esc(wsStr)}">补录该周</button>
+                </div>
+              </div>
+            `;
+          }
+          const m = item.m;
+          const d = m.date_short || m.date_full || '';
+          const doneCls = m.status==='done' ? 'done' : '';
+          const expanded = !!app.overviewMilestoneExpanded[String(m.id)];
+          const { start: msS, end: msE } = parseMilestoneRange(m);
+          const matchByWeek = (row)=>{
+            const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
+            const { start, end } = parseRangeYmd(raw);
+            if(!start || !end || !msS || !msE) return false;
+            return rangesOverlap(start, end, msS, msE);
+          };
+          const weekTasks = tasks.filter(t=> matchByWeek(t));
+          const weekBugs = bugs.filter(bg=> matchByWeek(bg));
+          const weekOps = ops.filter(o=> matchByWeek(o));
+          const cnt = weekTasks.length + weekBugs.length + weekOps.length;
+          return `
+            <div class="ms-row" data-open="milestone:${esc(m.id)}">
+              <div class="ms-left">
+                <span class="ms-date">${esc(d || '—')}</span>
+                <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <button class="btn ghost" type="button" data-ovmsexpand="${esc(m.id)}" title="${expanded?'收起':'展开'}" style="padding:6px 10px;">${expanded?'▾':'▸'} ${cnt}</button>
+                ${statusSelectHTML('milestone', m)}
+              </div>
+            </div>
+            ${expanded ? `
+              <div class="overview-ms-expand" style="padding:8px 10px 4px 10px;">
+                ${weekTasks.length ? `<div class="ov-ms-sec">功能（${weekTasks.length}）</div>` : ``}
+                ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
+                ${weekBugs.length ? `<div class="ov-ms-sec spaced">Bug（${weekBugs.length}）</div>` : ``}
+                ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
+                ${weekOps.length ? `<div class="ov-ms-sec spaced">运营（${weekOps.length}）</div>` : ``}
+                ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
+                ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:11px;">该周暂无已排期事项</div>` : ``}
+              </div>
+            ` : ``}
+          `;
+        }).join('');
+
         const weekRangeStr = `本周：${wStart.getFullYear()}-${String(wStart.getMonth()+1).padStart(2,'0')}-${String(wStart.getDate()).padStart(2,'0')} ~ ${wEnd.getFullYear()}-${String(wEnd.getMonth()+1).padStart(2,'0')}-${String(wEnd.getDate()).padStart(2,'0')}`;
 
         el.innerHTML = `
@@ -5295,7 +5533,10 @@
             </div>
 
             <div class="phase-card">
-              <div class="overview-panel-title" style="justify-content:flex-start;">目标关联任务情况</div>
+              <div class="overview-panel-title" style="justify-content:space-between;gap:12px;width:100%;box-sizing:border-box;">
+                <span>目标关联任务情况</span>
+                <button class="btn ghost" type="button" data-add-milestone style="flex-shrink:0;padding:6px 12px;font-size:12px;">+ 新增里程碑</button>
+              </div>
               <div class="phase-head">
                 <div>
                   <div class="phase-sub">${esc(phaseDesc)}</div>
@@ -5303,46 +5544,7 @@
                 <div class="phase-range">${esc(phaseRange)}</div>
               </div>
               <div class="milestone-list">
-                ${(milestones || []).slice().sort((a,b)=>(a.sort_order||0)-(b.sort_order||0)).slice(0,10).map(m=>{
-                  app.overviewMilestoneExpanded = app.overviewMilestoneExpanded || {};
-                  const d = m.date_short || m.date_full || '';
-                  const doneCls = m.status==='done' ? 'done' : '';
-                  const expanded = !!app.overviewMilestoneExpanded[String(m.id)];
-                  const { start: msS, end: msE } = parseRangeYmd(m.date_full || m.date_short || '');
-                  const matchByWeek = (row)=>{
-                    const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
-                    const { start, end } = parseRangeYmd(raw);
-                    if(!start || !end || !msS || !msE) return false;
-                    return rangesOverlap(start, end, msS, msE);
-                  };
-                  const weekTasks = tasks.filter(t=> matchByWeek(t));
-                  const weekBugs = bugs.filter(bg=> matchByWeek(bg));
-                  const weekOps = ops.filter(o=> matchByWeek(o));
-                  const cnt = weekTasks.length + weekBugs.length + weekOps.length;
-                  return `
-                    <div class="ms-row" data-open="milestone:${esc(m.id)}">
-                      <div class="ms-left">
-                        <span class="ms-date">${esc(d || '—')}</span>
-                        <span class="ms-name ${doneCls}">${esc(m.title || '未命名')}</span>
-                      </div>
-                      <div style="display:flex;align-items:center;gap:10px;">
-                        <button class="btn ghost" type="button" data-ovmsexpand="${esc(m.id)}" title="${expanded?'收起':'展开'}" style="padding:6px 10px;">${expanded?'▾':'▸'} ${cnt}</button>
-                        ${statusSelectHTML('milestone', m)}
-                      </div>
-                    </div>
-                    ${expanded ? `
-                      <div class="overview-ms-expand" style="padding:8px 10px 4px 10px;">
-                        ${weekTasks.length ? `<div class="ov-ms-sec">功能（${weekTasks.length}）</div>` : ``}
-                        ${weekTasks.map(t=>`<div class="row-item dev" data-open="task:${esc(t.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(t.name||'未命名')}</div><div class="dot ${esc(dotCls(t.status))}"></div></div>`).join('')}
-                        ${weekBugs.length ? `<div class="ov-ms-sec spaced">Bug（${weekBugs.length}）</div>` : ``}
-                        ${weekBugs.map(bg=>`<div class="row-item bug" data-open="bug:${esc(bg.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(bg.name||'未命名')}</div><div class="dot ${esc(dotCls(bg.status))}"></div></div>`).join('')}
-                        ${weekOps.length ? `<div class="ov-ms-sec spaced">运营（${weekOps.length}）</div>` : ``}
-                        ${weekOps.map(o=>`<div class="row-item ops" data-open="ops:${esc(o.id)}" style="margin-bottom:6px;"><div class="row-name">${esc(o.name||'未命名')}</div><div class="dot ${esc(dotCls(o.status))}"></div></div>`).join('')}
-                        ${cnt===0 ? `<div style="color:var(--text-secondary);font-size:11px;">该周暂无已排期事项</div>` : ``}
-                      </div>
-                    ` : ``}
-                  `;
-                }).join('')}
+                ${overviewMilestoneListHtml}
               </div>
             </div>
           </div>
@@ -5362,6 +5564,23 @@
             app.overviewMilestoneExpanded = app.overviewMilestoneExpanded || {};
             app.overviewMilestoneExpanded[String(id)] = !app.overviewMilestoneExpanded[String(id)];
             render();
+          });
+        });
+        el.querySelectorAll('[data-add-milestone]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            openCreateModalWithDefaults('milestone', {
+              week_start: ymd(wStart),
+              phase_id: phase?.id,
+            });
+          });
+        });
+        el.querySelectorAll('[data-fill-gap-week]').forEach(x=>{
+          x.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const ws = x.getAttribute('data-fill-gap-week');
+            if(!ws) return;
+            openCreateModalWithDefaults('milestone', { week_start: ws, phase_id: phase?.id });
           });
         });
         // month goal removed from overview
@@ -5910,7 +6129,7 @@
                     const d = m.date_short || m.date_full || '—';
                     const doneCls = m.status==='done' ? 'done' : '';
                     const expanded = !!app.milestoneExpanded[String(m.id)];
-                    const { start: msS, end: msE } = parseRangeYmd(m.date_full || '');
+                    const { start: msS, end: msE } = parseMilestoneRange(m);
                     const matchByWeek = (row)=>{
                       const raw = (row && (row.due_date || row.target_date)) ? (row.due_date || row.target_date) : '';
                       const { start, end } = parseRangeYmd(raw);
