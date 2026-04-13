@@ -1981,6 +1981,7 @@
         board: null,
         versionsPlatform: 'ios',
         backlogPhase: null,
+        backlogShowAll: false, // true：Backlog 页列出所有阶段条目
         drawer: { open:false, kind:null, row:null },
         localOnly: false, // 写回后端（失败则进入待同步队列，前端仍保持变更）
         syncQueue: [],    // { op:'patch'|'insert'|'delete', table, idField, idValue, patch|row, tempId? }
@@ -5938,18 +5939,25 @@
         if(!app.backlogPhase){
           app.backlogPhase = app.board.currentPhase?.id || (phases?.[0]?.id || null);
         }
-        const filtered = backlog.filter(x=> (x.phase_id || app.backlogPhase) === app.backlogPhase)
-          .slice()
-          .sort((a,b)=> priRank(a.priority) - priRank(b.priority));
+        const filtered = (app.backlogShowAll
+          ? backlog.slice()
+          : backlog.filter(x=> (x.phase_id || app.backlogPhase) === app.backlogPhase)
+        )
+          .sort((a,b)=>{
+            const pr = priRank(a.priority) - priRank(b.priority);
+            if(pr !== 0) return pr;
+            return Number(a.phase_id||0) - Number(b.phase_id||0);
+          });
 
         el.innerHTML = `
           <div class="pool-row">
             ${phases.map(p=>{
-              const active = p.id===app.backlogPhase ? 'pool active' : 'pool';
+              const active = !app.backlogShowAll && p.id===app.backlogPhase ? 'pool active' : 'pool';
               const label = `${p.name || ''} ${p.month_range || ''}`.trim();
               return `<div class="${active}" data-pool="${esc(p.id)}">${esc(label)} · ${counts.get(p.id)||0}</div>`;
             }).join('')}
-            <div style="margin-left:auto;">
+            <div class="${app.backlogShowAll ? 'pool active' : 'pool'}" data-backlog-all="1" role="button" tabindex="0">全量 · ${backlog.length}</div>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
               <button class="add-btn" id="addBacklogBtn" type="button">+ 新增 Backlog</button>
             </div>
           </div>
@@ -5958,7 +5966,7 @@
             ${filtered.map(x=>{
               const pd = priDotCls(x.priority);
               const mod = x.module || '—';
-              const phase = phases.find(p=>p.id=== (x.phase_id || app.backlogPhase));
+              const phase = phases.find(p=>p.id=== (x.phase_id || app.backlogPhase || phases[0]?.id));
               const kindLab = backlogItemKindLabel(x.item_kind || 'task');
               const verHint = formatBacklogVersionHint(x);
               const platStr = (backlogPlatformsFromVersions(x).slice(0,3).join('/') || (x.platforms||[]).slice(0,2).join('/')).toUpperCase();
@@ -5980,10 +5988,22 @@
 
         el.querySelectorAll('[data-pool]').forEach(x=>{
           x.addEventListener('click', ()=>{
+            app.backlogShowAll = false;
             app.backlogPhase = Number(x.getAttribute('data-pool'));
             render();
           });
         });
+        const allChip = el.querySelector('[data-backlog-all="1"]');
+        if(allChip){
+          const goAll = ()=>{
+            app.backlogShowAll = !app.backlogShowAll;
+            render();
+          };
+          allChip.addEventListener('click', goAll);
+          allChip.addEventListener('keydown', (e)=>{
+            if(e.key==='Enter' || e.key===' ') { e.preventDefault(); goAll(); }
+          });
+        }
         el.querySelectorAll('[data-open]').forEach(x=>{
           x.addEventListener('click', ()=>{
             const [kind, id] = x.getAttribute('data-open').split(':');
