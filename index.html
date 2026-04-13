@@ -1526,10 +1526,10 @@
       }
 
       /* ── Backlog tab ── */
-      .pool-row{
+      .backlog-toolbar{
         display:flex;
-        gap: var(--space-3);
         flex-wrap:wrap;
+        gap: 10px;
         align-items:center;
         margin-bottom: var(--space-5);
         padding: var(--space-4) var(--space-5);
@@ -1537,23 +1537,22 @@
         border-radius: var(--radius-lg);
         box-shadow: var(--shadow-sm);
       }
-      .pool{
-        padding: 8px 12px;
-        border-radius: 999px;
-        background-color: var(--surface-container);
-        color: var(--text-secondary);
-        cursor:pointer;
-        transition: background .15s ease, color .15s ease;
-        font-weight: 900;
-        font-size: 12px;
+      .backlog-toolbar .bl-toolbar-title{
+        font-weight: 800;
+        font-size: 0.875rem;
+        color: var(--on-surface);
+        margin-right: 4px;
       }
-      .pool:hover{ background: var(--surface-raised); color: var(--text-primary); }
-      .pool.active{ background: var(--surface-raised); color: var(--text-primary); }
-      .pool.drop-over{
-        outline: 2px solid var(--primary);
-        outline-offset: 2px;
-        background-color: var(--primary-container);
-        color: var(--on-primary-container);
+      .backlog-toolbar .select,
+      .backlog-toolbar .input{
+        font-size: 0.8125rem;
+        padding: 8px 10px;
+        min-height: 38px;
+      }
+      .backlog-toolbar #bl_filter_q{
+        flex: 1 1 160px;
+        min-width: 140px;
+        max-width: 280px;
       }
       .backlog-list .bl-row{
         background: var(--surface);
@@ -1567,14 +1566,6 @@
         transition: background .15s ease;
       }
       .backlog-list .bl-row:hover{ background: var(--surface-raised); }
-      .backlog-list .bl-row[draggable="true"]{
-        cursor: grab;
-        user-select: none;
-      }
-      .backlog-list .bl-row[draggable="true"]:active{ cursor: grabbing; }
-      .backlog-list .bl-row.bl-dragging{
-        opacity: 0.45;
-      }
       .pri-dot{
         width: 10px;
         height: 10px;
@@ -1994,8 +1985,7 @@
         user: null,
         board: null,
         versionsPlatform: 'ios',
-        backlogPhase: null,
-        backlogShowAll: false, // true：Backlog 页列出所有阶段条目
+        backlogFilter: { q:'', phase:'', kind:'', pri:'' },
         drawer: { open:false, kind:null, row:null },
         localOnly: false, // 写回后端（失败则进入待同步队列，前端仍保持变更）
         syncQueue: [],    // { op:'patch'|'insert'|'delete', table, idField, idValue, patch|row, tempId? }
@@ -2006,7 +1996,6 @@
         datePicker: { open:false, targetId:null },
         overviewRiskShowAll: false, // 总览「本周风险」多条时，点击卡片展开全部
         thisWeekRiskOnly: false,    // 「本周」仅展示 is_risk 项
-        _backlogDragEndTs: 0,       // 避免拖完后误触打开抽屉
       };
 
       const TABS = [
@@ -2035,6 +2024,14 @@
 
       function $(id){ return document.getElementById(id); }
       function esc(s){ return String(s ?? '').replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+
+      /** 仍应在 Backlog 列表中展示：未归档且未转入任务/Bug/运营 */
+      function backlogRowIsActive(x){
+        if(!x) return false;
+        if(x.is_archived) return false;
+        if(x.moved_to_task_id || x.moved_to_bug_id || x.moved_to_ops_id) return false;
+        return true;
+      }
 
       function toast(type, msg){
         const el = $('toast');
@@ -2678,7 +2675,7 @@
 
       function renderNav(){
         const el = $('nav');
-        const backlogCount = (app.board?.backlog || []).filter(x=>x && !x.is_archived).length;
+        const backlogCount = (app.board?.backlog || []).filter(backlogRowIsActive).length;
         el.innerHTML = TABS.map(t=>{
           const active = t.id===app.activeTab ? 'nav-item active' : 'nav-item';
           const cnt = t.id==='backlog' ? `<span class="nav-count">${backlogCount}</span>` : '';
@@ -3834,8 +3831,14 @@
           `;
         }
         if(kind === 'backlog'){
-          const pid = app.backlogPhase || app.board?.currentPhase?.id || 1;
+          const phases = app.board?.phases || [];
+          const pid = app.board?.currentPhase?.id || phases[0]?.id || 1;
           const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
+          const phaseOpts = phases.map(p=>{
+            const lab = `${p.name||''} ${p.month_range||''}`.trim();
+            const isSel = Number(p.id) === Number(pid) ? 'selected' : '';
+            return `<option value="${esc(String(p.id))}" ${isSel}>${esc(lab)}</option>`;
+          }).join('');
           return `
             <div class="field">
               <div class="label">名称</div>
@@ -3889,7 +3892,10 @@
               <div class="label">负责人</div>
               <input class="input" id="c_owners" placeholder="逗号分隔多人" />
             </div>
-            <input type="hidden" id="c_phase_id" value="${esc(String(pid))}" />
+            <div class="field">
+              <div class="label">所属阶段</div>
+              <select class="select" id="c_phase_pick">${phaseOpts}</select>
+            </div>
             <div class="field">
               <div class="label">备注</div>
               <textarea class="textarea" id="c_note"></textarea>
@@ -4299,7 +4305,7 @@
             return;
           }
           if(kind === 'backlog'){
-            const pidRaw = ($('c_phase_id') && $('c_phase_id').value) || String(app.backlogPhase || app.board.currentPhase?.id || 1);
+            const pidRaw = ($('c_phase_pick') && $('c_phase_pick').value) || String(app.board.currentPhase?.id || 1);
             const pid = Number(pidRaw);
             const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
@@ -4819,7 +4825,7 @@
         const bugs = (app.board.bugs || []).filter(b=>b && !b.is_archived);
         const ops = (app.board.ops || []).filter(o=>o && !o.is_archived);
         const milestones = (app.board.milestones || []);
-        const backlog = (app.board.backlog || []).filter(x=>x && !x.is_archived);
+        const backlog = (app.board.backlog || []).filter(backlogRowIsActive);
 
         // ── Top cards (per spec) ──
         const phase = app.board.currentPhase;
@@ -5970,88 +5976,60 @@
         });
       }
 
-      async function backlogSetPhase(backlogId, phaseId){
-        const pid = Number(phaseId);
-        if(!Number.isFinite(pid)){
-          toast('bad', '无效阶段');
-          return;
-        }
-        const row = findRow('backlog', backlogId);
-        if(!row){
-          toast('bad', '未找到 Backlog');
-          return;
-        }
-        const cur = row.phase_id != null && row.phase_id !== '' ? Number(row.phase_id) : null;
-        if(cur === pid){
-          toast('warn', '已在该阶段');
-          return;
-        }
-        applyLocal('backlog', backlogId, { phase_id: pid });
-        render();
-        saveLocalDraft();
-        try{
-          await patchById('backlog', 'id', backlogId, { phase_id: pid });
-          toast('ok', '已移到新阶段');
-          saveLocalDraft();
-        }catch(e){
-          console.warn(e);
-          enqueue({ op:'patch', table:'backlog', idField:'id', idValue: backlogId, patch:{ phase_id: pid } });
-          saveLocalDraft();
-          if(String(e.message||'').includes('not_authenticated')){
-            toast('warn', '未登录：已在前端生效，待登录后同步');
-          }else if(e && (e.status===401 || e.status===403)){
-            toast('warn', 'RLS 未放开：已在前端生效，待修复后同步');
-          }else{
-            toast('warn', '网络失败：已在前端生效，待同步');
-          }
-        }
-      }
-
       function renderBacklog(el){
         const phases = app.board.phases || [];
-        const backlog = (app.board.backlog || []).filter(x=>x && !x.is_archived);
-        const counts = new Map();
-        phases.forEach(p=> counts.set(p.id, 0));
-        backlog.forEach(x=>{
-          const pid = x.phase_id || phases?.[0]?.id || 1;
-          counts.set(pid, (counts.get(pid)||0) + 1);
+        if(!app.backlogFilter) app.backlogFilter = { q:'', phase:'', kind:'', pri:'' };
+        const f = app.backlogFilter;
+        const all = (app.board.backlog || []).filter(backlogRowIsActive);
+        const qlow = (f.q || '').trim().toLowerCase();
+        const filtered = all.filter(x=>{
+          if(f.phase && String(x.phase_id || '') !== String(f.phase)) return false;
+          if(f.kind && (x.item_kind || 'task') !== f.kind) return false;
+          if(f.pri && (x.priority || 'p2') !== f.pri) return false;
+          if(qlow){
+            const blob = `${x.name||''} ${x.module||''} ${x.note||''}`.toLowerCase();
+            if(!blob.includes(qlow)) return false;
+          }
+          return true;
+        }).slice().sort((a,b)=>{
+          const pr = priRank(a.priority) - priRank(b.priority);
+          if(pr !== 0) return pr;
+          return Number(a.phase_id||0) - Number(b.phase_id||0);
         });
-        if(!app.backlogPhase){
-          app.backlogPhase = app.board.currentPhase?.id || (phases?.[0]?.id || null);
-        }
-        const filtered = (app.backlogShowAll
-          ? backlog.slice()
-          : backlog.filter(x=> (x.phase_id || app.backlogPhase) === app.backlogPhase)
-        )
-          .sort((a,b)=>{
-            const pr = priRank(a.priority) - priRank(b.priority);
-            if(pr !== 0) return pr;
-            return Number(a.phase_id||0) - Number(b.phase_id||0);
-          });
+
+        const phaseOpts = `<option value="">全部阶段</option>` + phases.map(p=>{
+          const lab = `${p.name||''} ${p.month_range||''}`.trim();
+          const sel = String(f.phase)===String(p.id) ? 'selected' : '';
+          return `<option value="${esc(String(p.id))}" ${sel}>${esc(lab)}</option>`;
+        }).join('');
 
         el.innerHTML = `
-          <div class="pool-row">
-            ${phases.map(p=>{
-              const active = !app.backlogShowAll && p.id===app.backlogPhase ? 'pool active' : 'pool';
-              const label = `${p.name || ''} ${p.month_range || ''}`.trim();
-              return `<div class="${active}" data-pool="${esc(p.id)}">${esc(label)} · ${counts.get(p.id)||0}</div>`;
-            }).join('')}
-            <div class="${app.backlogShowAll ? 'pool active' : 'pool'}" data-backlog-all="1" role="button" tabindex="0">全量 · ${backlog.length}</div>
-            <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-              <button class="add-btn" id="addBacklogBtn" type="button">+ 新增 Backlog</button>
-            </div>
+          <div class="backlog-toolbar">
+            <span class="bl-toolbar-title">全部 · ${filtered.length} / ${all.length}</span>
+            <input class="input" id="bl_filter_q" type="search" autocomplete="off" placeholder="搜索名称、模块、备注…" value="${esc(f.q||'')}" />
+            <select class="select" id="bl_filter_phase" title="按阶段筛选">${phaseOpts}</select>
+            <select class="select" id="bl_filter_kind" title="规划类型">
+              <option value="" ${f.kind===''?'selected':''}>全部类型</option>
+              <option value="task" ${f.kind==='task'?'selected':''}>功能</option>
+              <option value="bug" ${f.kind==='bug'?'selected':''}>Bug</option>
+              <option value="ops" ${f.kind==='ops'?'selected':''}>运营</option>
+            </select>
+            <select class="select" id="bl_filter_pri" title="优先级">
+              <option value="" ${f.pri===''?'selected':''}>全部优先级</option>
+              ${['p0','p1','p2','p3'].map(p=>`<option value="${p}" ${f.pri===p?'selected':''}>${p.toUpperCase()}</option>`).join('')}
+            </select>
+            <button class="add-btn" id="addBacklogBtn" type="button">+ 新增 Backlog</button>
           </div>
-
           <div class="backlog-list">
-            ${filtered.map(x=>{
+            ${filtered.length ? filtered.map(x=>{
               const pd = priDotCls(x.priority);
               const mod = x.module || '—';
-              const phase = phases.find(p=>p.id=== (x.phase_id || app.backlogPhase || phases[0]?.id));
+              const phase = phases.find(p=>p.id=== (x.phase_id || phases[0]?.id));
               const kindLab = backlogItemKindLabel(x.item_kind || 'task');
               const verHint = formatBacklogVersionHint(x);
               const platStr = (backlogPlatformsFromVersions(x).slice(0,3).join('/') || (x.platforms||[]).slice(0,2).join('/')).toUpperCase();
               return `
-                <div class="bl-row" draggable="true" data-drag-backlog="${esc(x.id)}" data-open="backlog:${esc(x.id)}" title="拖到上方阶段 pill 即可更换阶段">
+                <div class="bl-row" data-open="backlog:${esc(x.id)}">
                   <span class="pri-dot ${esc(pd)}"></span>
                   <span class="bl-name">${esc(x.name || '未命名')}</span>
                   <div class="bl-tags">
@@ -6062,71 +6040,45 @@
                   </div>
                 </div>
               `;
-            }).join('') || `<div class="section">暂无 Backlog</div>`}
+            }).join('') : (all.length ? `<div class="section">暂无符合条件的 Backlog</div>` : `<div class="section">暂无 Backlog</div>`)}
           </div>
         `;
 
-        el.querySelectorAll('[data-pool]').forEach(x=>{
-          x.addEventListener('click', ()=>{
-            app.backlogShowAll = false;
-            app.backlogPhase = Number(x.getAttribute('data-pool'));
-            render();
-          });
-          x.addEventListener('dragover', (ev)=>{
-            ev.preventDefault();
-            ev.dataTransfer.dropEffect = 'move';
-            x.classList.add('drop-over');
-          });
-          x.addEventListener('dragleave', ()=>{
-            x.classList.remove('drop-over');
-          });
-          x.addEventListener('drop', (ev)=>{
-            ev.preventDefault();
-            x.classList.remove('drop-over');
-            const raw = ev.dataTransfer.getData('application/x-mindback-backlog') || ev.dataTransfer.getData('text/plain');
-            const bid = raw ? Number(raw.trim()) : NaN;
-            const ph = Number(x.getAttribute('data-pool'));
-            if(Number.isFinite(bid) && Number.isFinite(ph)){
-              backlogSetPhase(bid, ph).catch(err=>{ console.warn(err); });
-            }
-          });
-        });
-        const allChip = el.querySelector('[data-backlog-all="1"]');
-        if(allChip){
-          const goAll = ()=>{
-            app.backlogShowAll = !app.backlogShowAll;
-            render();
-          };
-          allChip.addEventListener('click', goAll);
-          allChip.addEventListener('keydown', (e)=>{
-            if(e.key==='Enter' || e.key===' ') { e.preventDefault(); goAll(); }
+        const qEl = $('bl_filter_q');
+        if(qEl){
+          let qTimer = null;
+          qEl.addEventListener('input', ()=>{
+            const v = qEl.value;
+            const c = qEl.selectionStart;
+            app.backlogFilter.q = v;
+            clearTimeout(qTimer);
+            qTimer = setTimeout(()=>{
+              render();
+              const n = $('bl_filter_q');
+              if(n){
+                n.value = app.backlogFilter.q || '';
+                n.focus();
+                const pos = Math.min(typeof c === 'number' ? c : n.value.length, n.value.length);
+                try{ n.setSelectionRange(pos, pos); }catch(_e){}
+              }
+            }, 200);
           });
         }
+        const onFilterChange = ()=>{
+          app.backlogFilter.phase = $('bl_filter_phase') ? ($('bl_filter_phase').value || '') : '';
+          app.backlogFilter.kind = $('bl_filter_kind') ? ($('bl_filter_kind').value || '') : '';
+          app.backlogFilter.pri = $('bl_filter_pri') ? ($('bl_filter_pri').value || '') : '';
+          render();
+        };
+        ['bl_filter_phase','bl_filter_kind','bl_filter_pri'].forEach(id=>{
+          const s = $(id);
+          if(s) s.addEventListener('change', onFilterChange);
+        });
+
         el.querySelectorAll('[data-open]').forEach(x=>{
           x.addEventListener('click', ()=>{
-            const open = x.getAttribute('data-open') || '';
-            if(open.startsWith('backlog:') && (Date.now() - (app._backlogDragEndTs || 0)) < 500){
-              return;
-            }
-            const [kind, id] = open.split(':');
+            const [kind, id] = (x.getAttribute('data-open')||'').split(':');
             openDrawerByKey(kind, id);
-          });
-        });
-        el.querySelectorAll('[data-drag-backlog]').forEach(x=>{
-          x.addEventListener('dragstart', (ev)=>{
-            const id = x.getAttribute('data-drag-backlog');
-            if(!id) return;
-            try{
-              ev.dataTransfer.setData('application/x-mindback-backlog', String(id));
-              ev.dataTransfer.setData('text/plain', String(id));
-              ev.dataTransfer.effectAllowed = 'move';
-            }catch(_e){}
-            x.classList.add('bl-dragging');
-          });
-          x.addEventListener('dragend', ()=>{
-            x.classList.remove('bl-dragging');
-            app._backlogDragEndTs = Date.now();
-            el.querySelectorAll('.pool.drop-over').forEach(p=> p.classList.remove('drop-over'));
           });
         });
         $('addBacklogBtn').addEventListener('click', ()=> openCreateModal('backlog'));
