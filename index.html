@@ -2968,6 +2968,7 @@
 
       async function refreshRemote(){
         app.board = await loadBoard();
+        saveLocalDraft();
         render();
       }
 
@@ -6504,12 +6505,15 @@
           }catch(_e){}
           app.syncQueue = loadQueue();
           const draft = loadLocalDraft();
-          if(draft?.board){
-            // 先加载本地草稿（保证前端生效），再由用户点击“同步”写回
+          const qLen = (app.syncQueue || []).length;
+          // 有待同步：必须优先本地草稿（离线队列与前端状态一致）
+          // 无待同步：始终拉远端，避免多人协作时被过期 localStorage 草稿覆盖
+          if(draft?.board && qLen > 0){
             app.board = draft.board;
-            toast('warn', (app.syncQueue?.length||0) > 0 ? '已加载本地草稿（有待同步变更）' : '已加载本地草稿');
+            toast('warn', '已加载本地草稿（有待同步变更）');
           }else{
             app.board = await loadBoard();
+            saveLocalDraft();
           }
           applySidebarCollapsed();
           render();
