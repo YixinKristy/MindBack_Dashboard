@@ -3162,7 +3162,7 @@
         const versionInternalNotes = kind==='version' ? (row.notes || '') : '';
         const moduleValue = row.module || '';
         const ownersValue = Array.isArray(row.owners) ? row.owners.join(',') : '';
-        const dueLabel = kind==='ops' ? '目标日期（开始～截止）' : kind==='backlog' ? '计划日期/周' : '截止日期';
+        const dueLabel = kind==='ops' ? '目标日期（开始～截止）' : kind==='backlog' ? '计划日期/周' : '排期（开始～截止）';
         const phaseThemeValue = kind==='phase' ? (row.theme || '') : '';
         const phaseRangeValue = kind==='phase' ? (row.month_range || '') : '';
         const phaseDescValue = kind==='phase' ? (row.description || '') : '';
@@ -3839,7 +3839,7 @@
               <input class="input" id="c_module" value="${esc(defModule)}" placeholder="例如：功能开发" />
             </div>
             <div class="field">
-              <div class="label">截止日期</div>
+              <div class="label">排期（开始～截止）</div>
               <input class="input" id="c_due" value="" placeholder="点击选择日期或范围…" readonly />
             </div>
             <div class="field">
@@ -3906,7 +3906,7 @@
               <input class="input" id="c_module" value="Bug" />
             </div>
             <div class="field">
-              <div class="label">截止日期</div>
+              <div class="label">排期（开始～截止）</div>
               <input class="input" id="c_due" value="" placeholder="点击选择日期或范围…" readonly />
             </div>
             <div class="field">
@@ -4877,7 +4877,7 @@
                       <div class="focus-info-row"><span class="lbl">负责人</span><span class="val" title="${esc(formatOwnersDisplay(it.row))}">${esc(formatOwnersDisplay(it.row))}</span></div>
                     </div>
                     <div class="meta-row">
-                      <span>截止：${esc(due)}</span>
+                      <span>排期：${esc(due)}</span>
                       <span>${esc(it.kind==='task'?'任务':it.kind==='bug'?'Bug':'运营')}</span>
                     </div>
                   </div>
