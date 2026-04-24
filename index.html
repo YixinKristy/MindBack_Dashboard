@@ -3162,7 +3162,7 @@
         const versionInternalNotes = kind==='version' ? (row.notes || '') : '';
         const moduleValue = row.module || '';
         const ownersValue = Array.isArray(row.owners) ? row.owners.join(',') : '';
-        const dueLabel = kind==='ops' ? '目标日期' : kind==='backlog' ? '计划日期/周' : '截止日期';
+        const dueLabel = kind==='ops' ? '目标日期（开始～截止）' : kind==='backlog' ? '计划日期/周' : '截止日期';
         const phaseThemeValue = kind==='phase' ? (row.theme || '') : '';
         const phaseRangeValue = kind==='phase' ? (row.month_range || '') : '';
         const phaseDescValue = kind==='phase' ? (row.description || '') : '';
@@ -3840,7 +3840,7 @@
             </div>
             <div class="field">
               <div class="label">截止日期</div>
-              <input class="input" id="c_due" type="date" />
+              <input class="input" id="c_due" value="" placeholder="点击选择日期或范围…" readonly />
             </div>
             <div class="field">
               <div class="label">负责人</div>
@@ -3907,7 +3907,7 @@
             </div>
             <div class="field">
               <div class="label">截止日期</div>
-              <input class="input" id="c_due" type="date" />
+              <input class="input" id="c_due" value="" placeholder="点击选择日期或范围…" readonly />
             </div>
             <div class="field">
               <div class="label">关联版本 · iOS</div>
@@ -3965,7 +3965,7 @@
               </div>
             </div>
             <div class="field">
-              <div class="label">目标日期</div>
+              <div class="label">目标日期（开始～截止）</div>
               <input class="input" id="c_target" value="" placeholder="点击选择日期或范围…" readonly />
             </div>
             <div class="field">
@@ -4116,7 +4116,7 @@
             t.addEventListener('click', ()=> openDateOrRangePicker('c_target'));
           }
         }
-        if(kind==='backlog'){
+        if(kind==='task' || kind==='bug' || kind==='backlog'){
           const t = $('c_due');
           if(t){
             t.readOnly = true;
@@ -4164,7 +4164,7 @@
             t.addEventListener('click', ()=> openDateOrRangePicker('c_target'));
           }
         }
-        if(kind==='backlog'){
+        if(kind==='task' || kind==='bug' || kind==='backlog'){
           const t = $('c_due');
           if(t){
             t.readOnly = true;
