@@ -714,6 +714,27 @@
       }
       .row-item.bug::before{ background-color: var(--error); }
       .row-item.ops::before{ background-color: var(--success); }
+      .row-item.row-item--sub{
+        margin-left: 22px;
+        min-height: 40px;
+        height: auto;
+        opacity: 0.96;
+      }
+      .row-item-group{
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .row-expand-spacer{
+        display: inline-block;
+        width: 28px;
+        flex-shrink: 0;
+      }
+      .row-expand-btn{
+        flex-shrink: 0;
+        padding: 2px 6px !important;
+        min-width: 28px;
+      }
       /* 本周 · 跟进事项：名称 + 负责人双行 */
       .row-item.tw-follow-row{
         height: auto;
@@ -2020,6 +2041,7 @@
         datePicker: { open:false, targetId:null },
         overviewRiskShowAll: false, // 总览「本周风险」多条时，点击卡片展开全部
         thisWeekRiskOnly: false,    // 「本周」仅展示 is_risk 项
+        subItemExpanded: {},        // 主项展开子项：`task:123` / `bug:1` / `ops:2`
       };
 
       const TABS = [
@@ -2824,6 +2846,18 @@
         return 'plan';
       }
 
+      /** 统一主/子字段：旧数据或缺列时 parent_id 视为 null，避免下拉与列表判断不一致 */
+      function normalizeParentId(v){
+        if(v === undefined || v === null || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      }
+      function normalizeHierarchyRows(rows){
+        return (rows || []).map(r=> (r && typeof r === 'object')
+          ? { ...r, parent_id: normalizeParentId(r.parent_id) }
+          : r);
+      }
+
       async function loadBoard(){
         const now = new Date();
         const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
@@ -2840,7 +2874,17 @@
         ]);
         const currentPhase = (Array.isArray(phases) ? phases : []).find(p=>p && p.is_current) || (phases||[])[0] || null;
         const overview = (Array.isArray(overviewRows) ? overviewRows[0] : null) || null;
-        return { phases: phases||[], currentPhase, versions: versions||[], milestones: milestones||[], tasks: tasks||[], bugs: bugs||[], ops: ops||[], backlog: backlog||[], overview };
+        return {
+          phases: phases||[],
+          currentPhase,
+          versions: versions||[],
+          milestones: milestones||[],
+          tasks: normalizeHierarchyRows(tasks),
+          bugs: normalizeHierarchyRows(bugs),
+          ops: normalizeHierarchyRows(ops),
+          backlog: backlog||[],
+          overview,
+        };
       }
 
       function renderNav(){
@@ -3010,6 +3054,128 @@
         return null;
       }
 
+      function boardListNameForHierarchy(kind){
+        return kind==='task' ? 'tasks' : kind==='bug' ? 'bugs' : kind==='ops' ? 'ops' : null;
+      }
+      function subHierarchyKey(kind, id){
+        return `${kind}:${String(id)}`;
+      }
+      function childrenOfHierarchy(kind, parentId){
+        const ln = boardListNameForHierarchy(kind);
+        if(!ln || parentId === undefined || parentId === null) return [];
+        const pid = Number(parentId);
+        if(!Number.isFinite(pid)) return [];
+        return (app.board[ln] || []).filter(x=> x && Number(x.parent_id) === pid)
+          .slice()
+          .sort((a,b)=>(Number(a.sort_order)||0)-(Number(b.sort_order)||0) || Number(a.id)-Number(b.id));
+      }
+      function parentRootPickerOptions(kind, selfId, selectedParentId){
+        const ln = boardListNameForHierarchy(kind);
+        if(!ln) return '';
+        const rows = (app.board[ln] || []).filter(x=> x && !x.is_archived && !x.parent_id && String(x.id) !== String(selfId || ''));
+        let html = rows.map(r=>{
+          const sel = selectedParentId != null && String(selectedParentId) === String(r.id) ? 'selected' : '';
+          const lab = ((r.name || '').trim() || ('#' + r.id));
+          return `<option value="${esc(String(r.id))}" ${sel}>${esc(lab)}</option>`;
+        }).join('');
+        if(selectedParentId != null && String(selectedParentId) !== ''){
+          const has = rows.some(r=> String(r.id) === String(selectedParentId));
+          if(!has){
+            const pr = findRow(kind, selectedParentId);
+            const lab = pr ? (((pr.name || '').trim()) || ('#' + pr.id)) : ('#' + selectedParentId);
+            html += `<option value="${esc(String(selectedParentId))}" selected>${esc(lab + '（当前关联）')}</option>`;
+          }
+        }
+        return html;
+      }
+      function resolveCreateParentId(kind){
+        if(!(kind === 'task' || kind === 'bug' || kind === 'ops') || !$('c_parent_id')) return { ok:true, id:null };
+        const cr = $('c_parent_id').value.trim();
+        if(!cr) return { ok:true, id:null };
+        const cpp = Number(cr);
+        if(!Number.isFinite(cpp)){
+          toast('bad', '父级无效');
+          return { ok:false, id:null };
+        }
+        const pr = findRow(kind, cpp);
+        if(!pr){
+          toast('bad', '未找到父级');
+          return { ok:false, id:null };
+        }
+        if(pr.parent_id){
+          toast('bad', '父级必须为主项');
+          return { ok:false, id:null };
+        }
+        return { ok:true, id:cpp };
+      }
+      function splitWeekHierarchyRoots(sortedFlat){
+        const ids = new Set(sortedFlat.map(x=>x.id));
+        const under = (r)=> r.parent_id && ids.has(Number(r.parent_id));
+        const roots = sortedFlat.filter(r=> !under(r));
+        const manualRank = (r)=> Number.isFinite(Number(r?.sort_order)) ? Number(r.sort_order) : 0;
+        const childrenOf = (pid)=> sortedFlat
+          .filter(r=> Number(r.parent_id) === Number(pid))
+          .slice()
+          .sort((a,b)=> manualRank(a) - manualRank(b) || Number(a.id) - Number(b.id));
+        return { roots, childrenOf };
+      }
+      function buildTwFollowHierarchyHtml(kind, sortedFlat){
+        const rowCls = kind==='task' ? 'dev' : kind==='bug' ? 'bug' : 'ops';
+        const { roots, childrenOf } = splitWeekHierarchyRoots(sortedFlat);
+        app.subItemExpanded = app.subItemExpanded || {};
+        const sk = (app.thisWeekSort && app.thisWeekSort[kind]) ? app.thisWeekSort[kind] : 'manual';
+        const draggable = sk === 'manual' ? 'true' : 'false';
+        const rowHtml = (r, isSub)=>{
+          const ch = childrenOf(r.id);
+          const hasKids = ch.length > 0 && !isSub;
+          const exp = !!app.subItemExpanded[subHierarchyKey(kind, r.id)];
+          const caret = hasKids
+            ? `<button type="button" class="btn ghost row-expand-btn" data-hier-expand="${kind}:${esc(String(r.id))}">${exp ? '▾' : '▸'}</button>`
+            : `<span class="row-expand-spacer" aria-hidden="true"></span>`;
+          const subCls = isSub ? ' row-item--sub' : '';
+          const body = `
+            <div class="row-item ${rowCls} tw-follow-row${subCls}" data-drag="${kind}:${esc(String(r.id))}" draggable="${isSub ? 'false' : draggable}">
+              <div style="display:flex;align-items:center;gap:6px;width:100%;min-width:0;">
+                ${caret}
+                <div class="tw-follow-row-body" style="flex:1;min-width:0;cursor:pointer;" data-open="${kind}:${esc(String(r.id))}">
+                  <div class="row-name">${esc(r.name || '未命名')}</div>
+                  <div class="tw-follow-owners" title="${esc(formatOwnersDisplay(r))}">负责人 ${esc(formatOwnersDisplay(r))}</div>
+                </div>
+                <div class="dot ${esc(dotCls(r.status))}"></div>
+              </div>
+            </div>
+          `;
+          const nest = (hasKids && exp) ? ch.map(c=> rowHtml(c, true)).join('') : '';
+          return body + nest;
+        };
+        return roots.map(r=> rowHtml(r, false)).join('') || `<div style="color:var(--text-secondary)">暂无</div>`;
+      }
+      function buildAllTasksHierarchyHtml(kind, sortedRoots){
+        const rowCls = kind==='task' ? 'dev' : kind==='bug' ? 'bug' : 'ops';
+        app.subItemExpanded = app.subItemExpanded || {};
+        const mk = (r, isSub)=>{
+          const ch = childrenOfHierarchy(kind, r.id).filter(c=> !c.is_archived);
+          const hasKids = ch.length > 0 && !isSub;
+          const exp = !!app.subItemExpanded[subHierarchyKey(kind, r.id)];
+          const caret = hasKids
+            ? `<button type="button" class="btn ghost row-expand-btn" data-hier-expand="${kind}:${esc(String(r.id))}">${exp ? '▾' : '▸'}</button>`
+            : `<span class="row-expand-spacer" aria-hidden="true"></span>`;
+          const subCls = isSub ? ' row-item--sub' : '';
+          const main = `
+            <div class="row-item ${rowCls}${subCls}">
+              <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0;">
+                ${caret}
+                <div class="row-name" style="flex:1;min-width:0;cursor:pointer;" data-open="${kind}:${esc(String(r.id))}">${esc((r.name || '').trim() || '未命名')}</div>
+              </div>
+              <div class="dot ${esc(dotCls(r.status))}"></div>
+            </div>
+          `;
+          const nest = (hasKids && exp) ? ch.map(c=> mk(c, true)).join('') : '';
+          return `<div class="row-item-group">${main}${nest}</div>`;
+        };
+        return sortedRoots.map(r=> mk(r, false)).join('');
+      }
+
       function applyLocal(kind, id, patch){
         const listName = kind==='task' ? 'tasks'
           : kind==='bug' ? 'bugs'
@@ -3176,11 +3342,43 @@
           return '';
         })();
 
+        const hierDrawerHtml = (()=>{
+          if(!(kind==='task' || kind==='bug' || kind==='ops')) return '';
+          const children = !row.parent_id ? childrenOfHierarchy(kind, row.id).filter(c=> !c.is_archived) : [];
+          const rowCls = kind==='task' ? 'dev' : kind==='bug' ? 'bug' : 'ops';
+          const kidsBlock = (!row.parent_id && children.length)
+            ? `
+            <div class="field">
+              <div class="label">子项（${children.length}）</div>
+              <div class="list" style="margin-top:6px;">
+                ${children.map(ch=>`
+                  <div class="row-item ${rowCls}" data-open="${kind}:${esc(String(ch.id))}" style="height:auto;min-height:40px;padding:8px 12px;">
+                    <div class="row-name">${esc(ch.name || '未命名')}</div>
+                    <div class="dot ${esc(dotCls(ch.status))}"></div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+            ` : '';
+          return `
+            <div class="field">
+              <div class="label">父级（留空表示主项）</div>
+              <select class="select" id="f_parent_id">
+                <option value="" ${!row.parent_id ? 'selected' : ''}>主项（不挂载父级）</option>
+                ${parentRootPickerOptions(kind, row.id, row.parent_id)}
+              </select>
+              <div style="margin-top:6px;color:var(--text-secondary);font-size:12px;">子项仅可关联到主项；不支持多级嵌套。</div>
+            </div>
+            ${kidsBlock}
+          `;
+        })();
+
         body.innerHTML = `
           <div class="field">
             <div class="label">${kind==='version' ? '版本号' : kind==='milestone' ? '标题' : kind==='phase' ? '阶段名称' : '名称'}</div>
             <input class="input" id="f_name" value="${esc(nameValue)}" />
           </div>
+          ${hierDrawerHtml}
           ${kind==='phase' ? `
             <div class="field">
               <div class="label">大目标</div>
@@ -3393,6 +3591,9 @@
         `;
 
         const saveBtn = `<button class="btn primary" id="drawerSave" type="button">保存</button>`;
+        const addChildBtn = ((kind==='task' || kind==='bug' || kind==='ops') && !row.parent_id)
+          ? `<button class="btn ghost" id="drawerAddChild" type="button">＋ 新建子项</button>`
+          : '';
         const moveBtn = (kind==='task')
           ? `<button class="btn ghost" id="drawerMove" type="button">移至 Backlog</button>`
           : (kind==='backlog')
@@ -3402,8 +3603,9 @@
           ? `<button class="btn danger" type="button" disabled style="opacity:.55;cursor:not-allowed;">删除</button>`
           : `<button class="btn danger" id="drawerDelete" type="button">删除</button>`;
 
-        foot.innerHTML = saveBtn + moveBtn + delBtn;
+        foot.innerHTML = saveBtn + addChildBtn + moveBtn + delBtn;
         $('drawerSave').onclick = ()=> drawerSave();
+        if($('drawerAddChild')) $('drawerAddChild').onclick = ()=> openCreateModalWithDefaults(kind, { parent_id: row.id });
         if($('drawerDelete')) $('drawerDelete').onclick = ()=> drawerDelete();
         if($('drawerMove')) $('drawerMove').onclick = ()=> moveTaskToBacklog();
         if($('drawerToWeek')) $('drawerToWeek').onclick = ()=> moveBacklogToThisWeek();
@@ -3516,6 +3718,41 @@
           const versionInternalSave = kind === 'version' && $('f_version_notes') ? $('f_version_notes').value : '';
           const msWeekVal = kind === 'milestone' && $('f_ms_week') ? $('f_ms_week').value.trim() : null;
 
+          let parentIdVal = undefined;
+          if((kind === 'task' || kind === 'bug' || kind === 'ops') && $('f_parent_id')){
+            const pv = $('f_parent_id').value.trim();
+            if(!pv){
+              parentIdVal = null;
+            }else{
+              const pp = Number(pv);
+              if(!Number.isFinite(pp)){
+                toast('bad', '父级无效');
+                return;
+              }
+              const pRow = findRow(kind, pp);
+              if(!pRow){
+                toast('bad', '未找到父级项');
+                return;
+              }
+              if(pRow.parent_id){
+                toast('bad', '父级必须为主项（不能有上级）');
+                return;
+              }
+              if(String(pp) === String(row.id)){
+                toast('bad', '不能将自身设为父级');
+                return;
+              }
+              parentIdVal = pp;
+            }
+          }
+          if(typeof parentIdVal === 'number' && Number.isFinite(parentIdVal)){
+            const subs = childrenOfHierarchy(kind, row.id).filter(c=> !c.is_archived);
+            if(subs.length){
+              toast('bad', '请先处理子项后再将此项挂载为子项');
+              return;
+            }
+          }
+
           const before = structuredClone(findRow(kind, row.id));
           // optimistic update
           if(kind==='phase'){
@@ -3548,6 +3785,7 @@
               version_android_id: versBundle.version_android_id,
               version_web_id: versBundle.version_web_id,
               version_id: versBundle.version_id,
+              ...(parentIdVal !== undefined ? { parent_id: parentIdVal } : {}),
             });
           }else if(kind==='bug'){
             applyLocal(kind, row.id, {
@@ -3559,6 +3797,7 @@
               version_web_id: versBundle.version_web_id,
               version_id: versBundle.version_id,
               platforms: versBundle.platforms,
+              ...(parentIdVal !== undefined ? { parent_id: parentIdVal } : {}),
             });
           }else if(kind==='task'){
             applyLocal(kind, row.id, {
@@ -3575,6 +3814,7 @@
               source: sourceVal,
               milestone_id: milestoneVal || null,
               is_archived: isArchivedVal,
+              ...(parentIdVal !== undefined ? { parent_id: parentIdVal } : {}),
             });
           }else if(kind==='backlog'){
             applyLocal(kind, row.id, {
@@ -3633,6 +3873,7 @@
             patch.version_android_id = versBundle.version_android_id;
             patch.version_web_id = versBundle.version_web_id;
             patch.version_id = versBundle.version_id;
+            if(parentIdVal !== undefined) patch.parent_id = parentIdVal;
           }else if(kind==='bug'){
             patch.name = name;
             patch.status = status;
@@ -3648,6 +3889,7 @@
             patch.version_web_id = versBundle.version_web_id;
             patch.version_id = versBundle.version_id;
             patch.platforms = versBundle.platforms;
+            if(parentIdVal !== undefined) patch.parent_id = parentIdVal;
           }else if(kind==='task'){
             patch.name = name;
             patch.status = status;
@@ -3669,6 +3911,7 @@
             if(sourceVal) patch.source = sourceVal;
             patch.milestone_id = milestoneVal || null;
             if(isArchivedVal !== null) patch.is_archived = isArchivedVal;
+            if(parentIdVal !== undefined) patch.parent_id = parentIdVal;
           }else if(kind==='backlog'){
             patch.name = name;
             patch.priority = priority;
@@ -3816,11 +4059,20 @@
           const defModule = (d.module || '功能开发');
           const defThisWeek = typeof d.this_week === 'boolean' ? String(d.this_week) : 'true';
           const defFocus = typeof d.is_focus === 'boolean' ? String(d.is_focus) : 'false';
+          const defParentNum = Number(d.parent_id);
+          const hasParentPick = Number.isFinite(defParentNum) && defParentNum > 0;
           const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
           return `
             <div class="field">
               <div class="label">名称</div>
               <input class="input" id="c_name" placeholder="任务名称" />
+            </div>
+            <div class="field">
+              <div class="label">父级（主项）</div>
+              <select class="select" id="c_parent_id">
+                <option value="" ${!hasParentPick ? 'selected' : ''}>主项（不挂载）</option>
+                ${parentRootPickerOptions('task', null, hasParentPick ? defParentNum : null)}
+              </select>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="field">
@@ -3881,11 +4133,20 @@
           `;
         }
         if(kind === 'bug'){
+          const defParentNum = Number(d.parent_id);
+          const hasParentPick = Number.isFinite(defParentNum) && defParentNum > 0;
           const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
           return `
             <div class="field">
               <div class="label">名称</div>
               <input class="input" id="c_name" placeholder="Bug 简述" />
+            </div>
+            <div class="field">
+              <div class="label">父级（主项）</div>
+              <select class="select" id="c_parent_id">
+                <option value="" ${!hasParentPick ? 'selected' : ''}>主项（不挂载）</option>
+                ${parentRootPickerOptions('bug', null, hasParentPick ? defParentNum : null)}
+              </select>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="field">
@@ -3939,11 +4200,20 @@
           `;
         }
         if(kind === 'ops'){
+          const defParentNum = Number(d.parent_id);
+          const hasParentPick = Number.isFinite(defParentNum) && defParentNum > 0;
           const sel = (p)=> (d && d[`version_${p}_id`]) ? Number(d[`version_${p}_id`]) : '';
           return `
             <div class="field">
               <div class="label">名称</div>
               <input class="input" id="c_name" placeholder="运营动作名称" />
+            </div>
+            <div class="field">
+              <div class="label">父级（主项）</div>
+              <select class="select" id="c_parent_id">
+                <option value="" ${!hasParentPick ? 'selected' : ''}>主项（不挂载）</option>
+                ${parentRootPickerOptions('ops', null, hasParentPick ? defParentNum : null)}
+              </select>
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
               <div class="field">
@@ -4446,6 +4716,8 @@
             return;
           }
           if(kind === 'task'){
+            const pRes = resolveCreateParentId('task');
+            if(!pRes.ok) return;
             const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
               name,
@@ -4463,6 +4735,7 @@
               version_android_id: tv.version_android_id,
               version_web_id: tv.version_web_id,
               source: 'internal',
+              parent_id: pRes.id,
             };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.tasks = app.board.tasks || [];
@@ -4492,6 +4765,8 @@
             return;
           }
           if(kind === 'bug'){
+            const pRes = resolveCreateParentId('bug');
+            if(!pRes.ok) return;
             const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
               name,
@@ -4508,6 +4783,7 @@
               version_ios_id: tv.version_ios_id,
               version_android_id: tv.version_android_id,
               version_web_id: tv.version_web_id,
+              parent_id: pRes.id,
             };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.bugs = app.board.bugs || [];
@@ -4532,6 +4808,8 @@
             return;
           }
           if(kind === 'ops'){
+            const pRes = resolveCreateParentId('ops');
+            if(!pRes.ok) return;
             const tv = taskVersionBundleFromSelects('c_v_ios', 'c_v_android', 'c_v_web');
             const row = {
               name,
@@ -4547,6 +4825,7 @@
               version_ios_id: tv.version_ios_id,
               version_android_id: tv.version_android_id,
               version_web_id: tv.version_web_id,
+              parent_id: pRes.id,
             };
             const tmpId = -Math.floor(Math.random() * 1e9);
             app.board.ops = app.board.ops || [];
@@ -4911,15 +5190,7 @@
                   <button class="add-btn" id="addTaskBtn" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${devList.map(t=>`
-                    <div class="row-item dev tw-follow-row" data-open="task:${esc(t.id)}" data-drag="task:${esc(t.id)}" draggable="${sortKeyFor('task')==='manual'?'true':'false'}">
-                      <div class="tw-follow-row-body">
-                        <div class="row-name">${esc(t.name || '未命名')}</div>
-                        <div class="tw-follow-owners" title="${esc(formatOwnersDisplay(t))}">负责人 ${esc(formatOwnersDisplay(t))}</div>
-                      </div>
-                      <div class="dot ${esc(dotCls(t.status))}"></div>
-                    </div>
-                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                  ${buildTwFollowHierarchyHtml('task', devList)}
                 </div>
               </div>
               <div class="col">
@@ -4932,15 +5203,7 @@
                   <button class="add-btn" id="addBugBtn" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${bugList.map(b=>`
-                    <div class="row-item bug tw-follow-row" data-open="bug:${esc(b.id)}" data-drag="bug:${esc(b.id)}" draggable="${sortKeyFor('bug')==='manual'?'true':'false'}">
-                      <div class="tw-follow-row-body">
-                        <div class="row-name">${esc(b.name || '未命名')}</div>
-                        <div class="tw-follow-owners" title="${esc(formatOwnersDisplay(b))}">负责人 ${esc(formatOwnersDisplay(b))}</div>
-                      </div>
-                      <div class="dot ${esc(dotCls(b.status))}"></div>
-                    </div>
-                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                  ${buildTwFollowHierarchyHtml('bug', bugList)}
                 </div>
               </div>
               <div class="col">
@@ -4953,15 +5216,7 @@
                   <button class="add-btn" id="addOpsBtn" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${opsList.map(o=>`
-                    <div class="row-item ops tw-follow-row" data-open="ops:${esc(o.id)}" data-drag="ops:${esc(o.id)}" draggable="${sortKeyFor('ops')==='manual'?'true':'false'}">
-                      <div class="tw-follow-row-body">
-                        <div class="row-name">${esc(o.name || '未命名')}</div>
-                        <div class="tw-follow-owners" title="${esc(formatOwnersDisplay(o))}">负责人 ${esc(formatOwnersDisplay(o))}</div>
-                      </div>
-                      <div class="dot ${esc(dotCls(o.status))}"></div>
-                    </div>
-                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                  ${buildTwFollowHierarchyHtml('ops', opsList)}
                 </div>
               </div>
             </div>
@@ -4972,6 +5227,16 @@
           x.addEventListener('click', ()=>{
             const [kind, id] = x.getAttribute('data-open').split(':');
             openDrawerByKey(kind, id);
+          });
+        });
+        el.querySelectorAll('[data-hier-expand]').forEach(btn=>{
+          btn.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const [k, id] = btn.getAttribute('data-hier-expand').split(':');
+            app.subItemExpanded = app.subItemExpanded || {};
+            const key = subHierarchyKey(k, id);
+            app.subItemExpanded[key] = !app.subItemExpanded[key];
+            render();
           });
         });
         el.querySelectorAll('[data-twriskonly]').forEach(x=>{
@@ -5036,9 +5301,9 @@
           renderHeader();
         };
         const listIds = (kind)=>{
-          if(kind==='task') return sortListTw('task', tasks).map(x=>Number(x.id)).filter(Number.isFinite);
-          if(kind==='bug') return sortListTw('bug', bugs).map(x=>Number(x.id)).filter(Number.isFinite);
-          return sortListTw('ops', ops).map(x=>Number(x.id)).filter(Number.isFinite);
+          if(kind==='task') return splitWeekHierarchyRoots(sortListTw('task', tasksTw)).roots.map(x=> Number(x.id)).filter(Number.isFinite);
+          if(kind==='bug') return splitWeekHierarchyRoots(sortListTw('bug', bugsTw)).roots.map(x=> Number(x.id)).filter(Number.isFinite);
+          return splitWeekHierarchyRoots(sortListTw('ops', opsTw)).roots.map(x=> Number(x.id)).filter(Number.isFinite);
         };
         el.querySelectorAll('[data-drag]').forEach(rowEl=>{
           const { kind, id } = parseDrag(rowEl.getAttribute('data-drag'));
@@ -6016,10 +6281,28 @@
         const sortKey = app.allTasksFilter.sort || 'manual';
 
         const pick = (kind, row)=>{
+          if(row.parent_id) return null;
           const name = (row?.name || row?.title || '').trim();
           if(!name) return null;
-          if(!showDone && String(row?.status||'') === 'done') return null;
-          if(q && !name.toLowerCase().includes(q) && !String(row?.note||'').toLowerCase().includes(q)) return null;
+          const kids = childrenOfHierarchy(kind, row.id).filter(k=> !k.is_archived);
+          if(!showDone && String(row?.status||'') === 'done'){
+            const childMatchQ = q && kids.some(ch=>{
+              const cn = (ch.name || '').trim().toLowerCase();
+              return cn.includes(q) || String(ch.note || '').toLowerCase().includes(q);
+            });
+            const hasOpenChild = kids.some(ch=> String(ch?.status || '') !== 'done');
+            if(!childMatchQ && !hasOpenChild) return null;
+          }
+          if(q){
+            const nlow = name.toLowerCase();
+            const nn = String(row?.note || '').toLowerCase();
+            const hitSelf = nlow.includes(q) || nn.includes(q);
+            const hitChild = kids.some(ch=>{
+              const cn = (ch.name || '').trim().toLowerCase();
+              return cn.includes(q) || String(ch.note || '').toLowerCase().includes(q);
+            });
+            if(!hitSelf && !hitChild) return null;
+          }
           const vids = rowLinkedVersions(row);
           const vlabels = vids.map(id=>{
             const v = versions.find(x=>x && Number(x.id)===Number(id));
@@ -6088,12 +6371,10 @@
                   <button class="add-btn" id="allAddTask" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${sorted.filter(x=>x.kind==='task').map(it=>`
-                    <div class="row-item dev" data-open="task:${esc(it.id)}">
-                      <div class="row-name">${esc(it.name)}</div>
-                      <div class="dot ${esc(dotCls(it.row.status))}"></div>
-                    </div>
-                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                  ${(()=>{
+                    const roots = sorted.filter(x=> x.kind === 'task').map(x=> x.row);
+                    return roots.length ? buildAllTasksHierarchyHtml('task', roots) : `<div style="color:var(--text-secondary)">暂无</div>`;
+                  })()}
                 </div>
               </div>
               <div class="col">
@@ -6102,12 +6383,10 @@
                   <button class="add-btn" id="allAddBug" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${sorted.filter(x=>x.kind==='bug').map(it=>`
-                    <div class="row-item bug" data-open="bug:${esc(it.id)}">
-                      <div class="row-name">${esc(it.name)}</div>
-                      <div class="dot ${esc(dotCls(it.row.status))}"></div>
-                    </div>
-                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                  ${(()=>{
+                    const roots = sorted.filter(x=> x.kind === 'bug').map(x=> x.row);
+                    return roots.length ? buildAllTasksHierarchyHtml('bug', roots) : `<div style="color:var(--text-secondary)">暂无</div>`;
+                  })()}
                 </div>
               </div>
               <div class="col">
@@ -6116,12 +6395,10 @@
                   <button class="add-btn" id="allAddOps" type="button">+ 添加</button>
                 </div>
                 <div class="list">
-                  ${sorted.filter(x=>x.kind==='ops').map(it=>`
-                    <div class="row-item ops" data-open="ops:${esc(it.id)}">
-                      <div class="row-name">${esc(it.name)}</div>
-                      <div class="dot ${esc(dotCls(it.row.status))}"></div>
-                    </div>
-                  `).join('') || `<div style="color:var(--text-secondary)">暂无</div>`}
+                  ${(()=>{
+                    const roots = sorted.filter(x=> x.kind === 'ops').map(x=> x.row);
+                    return roots.length ? buildAllTasksHierarchyHtml('ops', roots) : `<div style="color:var(--text-secondary)">暂无</div>`;
+                  })()}
                 </div>
               </div>
             </div>
@@ -6150,6 +6427,16 @@
           x.addEventListener('click', ()=>{
             const [kind, id] = x.getAttribute('data-open').split(':');
             openDrawerByKey(kind, id);
+          });
+        });
+        el.querySelectorAll('[data-hier-expand]').forEach(btn=>{
+          btn.addEventListener('click', (e)=>{
+            e.stopPropagation();
+            const [k, id] = btn.getAttribute('data-hier-expand').split(':');
+            app.subItemExpanded = app.subItemExpanded || {};
+            const key = subHierarchyKey(k, id);
+            app.subItemExpanded[key] = !app.subItemExpanded[key];
+            render();
           });
         });
         if($('allAddTask')) $('allAddTask').addEventListener('click', ()=> openCreateModal('task'));
@@ -6510,6 +6797,11 @@
           // 无待同步：始终拉远端，避免多人协作时被过期 localStorage 草稿覆盖
           if(draft?.board && qLen > 0){
             app.board = draft.board;
+            if(app.board){
+              app.board.tasks = normalizeHierarchyRows(app.board.tasks);
+              app.board.bugs = normalizeHierarchyRows(app.board.bugs);
+              app.board.ops = normalizeHierarchyRows(app.board.ops);
+            }
             toast('warn', '已加载本地草稿（有待同步变更）');
           }else{
             app.board = await loadBoard();
