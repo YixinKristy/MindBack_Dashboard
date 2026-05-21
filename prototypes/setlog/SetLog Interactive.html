@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SetLog — Interactive App</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap" rel="stylesheet">
+<script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"></script>
+<style>
+:root {
+  --paper:#F9F4EC; --paper-warm:#F3EADD;
+  --white:#fff; --ink:#192749;
+  --ink9:#212121; --ink7:#333; --ink5:#7B7B7B;
+  --ink4:#C5C5C7; --ink3:#D9D9D9; --ink2:#EAEAEA;
+  --ink1:#F3F3F3; --ink05:#FAFAFA;
+  --kraft:#916964; --kraft-d:#4E1E08;
+  --sky:#78AAFA; --sky-s:#779EDC; --pb:#C5DDF5;
+  --ease:cubic-bezier(.4,0,.2,1);
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{
+  background:#e8e3dc;
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  font-family:-apple-system,"PingFang SC","Hiragino Sans GB",sans-serif;
+  overflow:hidden;
+}
+#root{display:flex;flex-direction:column;align-items:center;gap:16px}
+
+/* ── Phone shell ── */
+.phone{
+  width:390px;height:780px;
+  background:var(--paper);
+  border-radius:48px;
+  box-shadow:0 32px 80px rgba(0,0,0,.24),inset 0 0 0 1px rgba(0,0,0,.08);
+  overflow:hidden;position:relative;
+  display:flex;flex-direction:column;
+}
+.phone-screen{position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Transitions ── */
+@keyframes slideInR{from{transform:translateX(100%)}to{transform:translateX(0)}}
+@keyframes slideOutL{from{transform:translateX(0)}to{transform:translateX(-28%)}}
+@keyframes slideInL{from{transform:translateX(-28%)}to{transform:translateX(0)}}
+@keyframes slideOutR{from{transform:translateX(0)}to{transform:translateX(100%)}}
+@keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes sheetDown{from{transform:translateY(0)}to{transform:translateY(100%)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeOut{from{opacity:1}to{opacity:0}}
+@keyframes chipIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes chipOut{from{opacity:1;transform:scale(1)}to{opacity:0;transform:scale(.92)}}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(-6px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes toastOut{from{opacity:1}to{opacity:0}}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+@keyframes glow{0%,100%{opacity:.6}50%{opacity:1}}
+
+.enter-r{animation:slideInR .3s var(--ease) forwards}
+.exit-l {animation:slideOutL .3s var(--ease) forwards}
+.enter-l{animation:slideInL .3s var(--ease) forwards}
+.exit-r {animation:slideOutR .3s var(--ease) forwards}
+
+/* scrollbars */
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:rgba(0,0,0,.12);border-radius:2px}
+
+/* ── Bottom nav for demo ── */
+.demo-nav{
+  display:flex;gap:8px;
+  background:rgba(255,255,255,.88);backdrop-filter:blur(12px);
+  border:1px solid rgba(0,0,0,.08);border-radius:12px;
+  padding:6px 10px;
+}
+.demo-btn{
+  background:none;border:none;cursor:pointer;
+  font-size:11px;font-family:monospace;color:rgba(0,0,0,.5);
+  padding:5px 10px;border-radius:7px;transition:background .12s;
+  white-space:nowrap;
+}
+.demo-btn:hover,.demo-btn.active{background:rgba(0,0,0,.07);color:rgba(0,0,0,.75)}
+.demo-sep{color:rgba(0,0,0,.2);font-size:11px;align-self:center}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback,useContext,createContext,useMemo}=React;
+
+/* ════════════════════════════════════════
+   TOKENS
+════════════════════════════════════════ */
+const C={
+  paper:'#F9F4EC',warm:'#F3EADD',white:'#fff',
+  ink:'#192749',ink9:'#212121',ink7:'#333',ink5:'#7B7B7B',
+  ink4:'#C5C5C7',ink3:'#D9D9D9',ink2:'#EAEAEA',ink1:'#F3F3F3',ink05:'#FAFAFA',
+  kraft:'#916964',kraftD:'#4E1E08',
+  sky:'#78AAFA',skyS:'#779EDC',pb:'#C5DDF5',
+};
+const PALS=[
+  ['#1a1a2e','#16213e','#0f3460'],['#2d1b69','#11998e','#38ef7d'],
+  ['#d4a574','#c8956c','#a0522d'],['#87CEEB','#4682B4','#191970'],
+  ['#228B22','#006400','#2F4F4F'],['#006994','#0077b6','#023e8a'],
+  ['#f093fb','#f5576c','#fd7b33'],['#56ab2f','#a8e6cf','#dcedc1'],
+  ['#232526','#414345','#0f2027'],['#8e2de2','#4a00e0','#2d1b69'],
+];
+const grad=(s=0)=>{const[a,b,d]=PALS[s%PALS.length];return`linear-gradient(135deg,${a},${b},${d})`};
+
+/* ════════════════════════════════════════
+   NAV CONTEXT
+════════════════════════════════════════ */
+const NavCtx=createContext(null);
+const useNav=()=>useContext(NavCtx);
+
+/* ════════════════════════════════════════
+   ICONS
+════════════════════════════════════════ */
+const Back=()=><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"/></svg>;
+const X=({s=18})=><svg width={s} height={s} viewBox="0 0 18 18" fill="none"><path d="M13.5 4.5l-9 9M4.5 4.5l9 9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>;
+const Spark=({s=14})=><svg width={s} height={s} viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l1.6 5.4L15 8l-5.4 1.6L8 15l-1.6-5.4L1 8l5.4-1.6z"/></svg>;
+const Share=({s=16})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>;
+const Chev=({d='r',s=14})=>{const p={r:'M9 18l6-6-6-6',l:'M15 18l-6-6 6-6',d:'M6 9l6 6 6-6',u:'M18 15l-6-6-6 6'};return<svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={p[d]} strokeLinecap="round" strokeLinejoin="round"/></svg>};
+const Plus=({s=18})=><svg width={s} height={s} viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M9 3v12M3 9h12" strokeLinecap="round"/></svg>;
+const Camera=({s=20})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>;
+const Clock=({s=12})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>;
+const Pin=({s=12})=><svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>;
+
+/* ════════════════════════════════════════
+   SHARED UI
+════════════════════════════════════════ */
+function Pill({children,v='default',sm=true,sx={}}){
+  const vs={
+    default:{bg:'#EEF4EC',fg:'#4B7A53'},kraft:{bg:'#F3E8E6',fg:'#916964'},
+    sky:{bg:'#E6EEFB',fg:'#3A6FD0'},mint:{bg:'#E8F5EC',fg:'#3E8C5A'},
+    peach:{bg:'#FDEEDC',fg:'#C06B28'},black:{bg:'#212121',fg:'#fff'},
+    white:{bg:'rgba(255,255,255,.92)',fg:'#333'},ghost:{bg:'rgba(0,0,0,.07)',fg:'#7B7B7B'},
+  };
+  const vv=vs[v]||vs.default;
+  return(
+    <span style={{
+      display:'inline-flex',alignItems:'center',gap:3,
+      background:vv.bg,color:vv.fg,
+      fontSize:sm?11:12,fontFamily:'monospace',fontWeight:500,lineHeight:1,
+      padding:sm?'3px 8px':'4px 10px',borderRadius:999,whiteSpace:'nowrap',...sx,
+    }}>{children}</span>
+  );
+}
+
+const AVBG=['#FFB3A7','#AECBFA','#B5EAD7','#FFDAC1','#C7CEEA','#F2D2BD','#85C1E9'];
+function Av({name='?',size=28}){
+  const bg=AVBG[name.charCodeAt(0)%AVBG.length];
+  return(
+    <div style={{
+      width:size,height:size,borderRadius:'50%',background:bg,flexShrink:0,
+      display:'flex',alignItems:'center',justifyContent:'center',
+      fontSize:size*.38,fontWeight:600,color:C.ink7,border:'2px solid white',
+    }}>{name[0]}</div>
+  );
+}
+function AvStack({names=[],size=26}){
+  return(<div style={{display:'flex'}}>
+    {names.map((n,i)=><div key={i} style={{marginLeft:i>0?-8:0,zIndex:names.length-i}}><Av name={n} size={size}/></div>)}
+  </div>);
+}
+
+function Img({seed=0,w='100%',h=160,r=8,overlay=false,children,sx={}}){
+  return(
+    <div style={{width:w,height:h,borderRadius:r,background:grad(seed),position:'relative',overflow:'hidden',flexShrink:0,...sx}}>
+      {overlay&&<div style={{position:'absolute',inset:0,background:'linear-gradient(to top,rgba(0,0,0,.58),rgba(0,0,0,.12))'}}/>}
+      {children}
+    </div>
+  );
+}
+
+function SB({dark=false}){
+  const fg=dark?'rgba(255,255,255,.9)':C.ink9;
+  return(
+    <div style={{height:44,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 24px 0 28px',flexShrink:0}}>
+      <span style={{fontFamily:'monospace',fontSize:15,fontWeight:600,color:fg}}>9:41</span>
+      <div style={{display:'flex',alignItems:'center',gap:5}}>
+        <svg width="17" height="11" viewBox="0 0 17 11" fill={fg}>
+          <rect x="0" y="5" width="3" height="6" rx="1"/>
+          <rect x="4.5" y="3" width="3" height="8" rx="1"/>
+          <rect x="9" y="1" width="3" height="10" rx="1"/>
+          <rect x="13.5" y="0" width="3" height="11" rx="1"/>
+        </svg>
+        <svg width="15" height="11" viewBox="0 0 15 11" fill="none">
+          <path d="M7.5 8a1.5 1.5 0 110 3 1.5 1.5 0 010-3z" fill={fg}/>
+          <path d="M3.2 5.5a6.1 6.1 0 018.6 0" stroke={fg} strokeWidth="1.4" strokeLinecap="round"/>
+          <path d="M0.5 3a10 10 0 0114 0" stroke={fg} strokeWidth="1.4" strokeLinecap="round"/>
+        </svg>
+        <div style={{display:'flex',alignItems:'center',gap:1}}>
+          <div style={{width:25,height:12,border:`1.5px solid ${fg}`,borderRadius:3,display:'flex',alignItems:'center',padding:'1.5px'}}>
+            <div style={{width:'82%',height:'100%',background:fg,borderRadius:1.5}}/>
+          </div>
+          <div style={{width:2,height:5,background:fg,borderRadius:1,opacity:.6}}/>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NB({title,sub,left,right,bg=C.white,dark=false,line=true}){
+  const tc=dark?'white':C.ink9;
+  return(
+    <div style={{background:bg,flexShrink:0,borderBottom:line?`1px solid rgba(0,0,0,.06)`:'none'}}>
+      <div style={{height:44,display:'flex',alignItems:'center',padding:'0 8px'}}>
+        <div style={{flex:1,display:'flex',alignItems:'center'}}>{left||<div style={{width:44}}/>}</div>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontSize:16,fontWeight:600,color:tc,lineHeight:1.2}}>{title}</div>
+          {sub&&<div style={{fontSize:11,color:dark?'rgba(255,255,255,.6)':C.ink5,marginTop:1,fontFamily:'monospace'}}>{sub}</div>}
+        </div>
+        <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'flex-end'}}>{right||<div style={{width:44}}/>}</div>
+      </div>
+    </div>
+  );
+}
+
+function NBBtn({children,onClick,color=C.ink9}){
+  return(
+    <button onClick={onClick} style={{background:'none',border:'none',cursor:'pointer',color,padding:'8px 12px',display:'flex',alignItems:'center',lineHeight:1}}>
+      {children}
+    </button>
+  );
+}
+
+function Bar({val,max,label,color=C.kraft}){
+  const pct=Math.min(100,(val/max)*100);
+  return(
+    <div>
+      {label!==undefined&&<div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+        <span style={{fontSize:11,fontFamily:'monospace',color:C.ink5}}>{label}</span>
+        <span style={{fontSize:11,fontFamily:'monospace',color}}>{val}/{max}</span>
+      </div>}
+      <div style={{height:4,background:C.ink2,borderRadius:999,overflow:'hidden'}}>
+        <div style={{height:'100%',width:`${pct}%`,background:color,borderRadius:999,transition:'width .5s var(--ease)'}}/>
+      </div>
+    </div>
+  );
+}
+
+/* Notch */
+const Notch=()=><div style={{position:'absolute',top:12,left:'50%',transform:'translateX(-50%)',width:120,height:34,borderRadius:22,background:'#0a0a0a',zIndex:200,pointerEvents:'none'}}/>;
+const HomeBar=({dark=false})=><div style={{position:'absolute',bottom:8,left:'50%',transform:'translateX(-50%)',width:134,height:5,borderRadius:999,background:dark?'rgba(255,255,255,.35)':'rgba(0,0,0,.18)'}}/>;
+
+/* ════════════════════════════════════════
+   SHEET
+════════════════════════════════════════ */
+function Sheet({title,children,onClose,pad=true,maxH='82%'}){
+  const [closing,setClosing]=useState(false);
+  function close(){
+    setClosing(true);
+    setTimeout(()=>{setClosing(false);onClose&&onClose()},260);
+  }
+  return(
+    <div style={{position:'absolute',inset:0,zIndex:60}}>
+      <div
+        onClick={close}
+        style={{
+          position:'absolute',inset:0,
+          background:'rgba(0,0,0,.45)',
+          animation:'fadeIn .25s ease',
+        }}
+      />
+      <div style={{
+        position:'absolute',bottom:0,left:0,right:0,
+        background:C.white,borderRadius:'22px 22px 0 0',
+        maxHeight:maxH,overflowY:'auto',
+        animation:closing?'sheetDown .26s var(--ease) forwards':'sheetUp .26s var(--ease)',
+      }}>
+        <div style={{display:'flex',justifyContent:'center',padding:'10px 0 0'}}>
+          <div style={{width:36,height:5,borderRadius:999,background:C.ink3}}/>
+        </div>
+        {title&&(
+          <div style={{padding:'14px 20px 12px',fontSize:16,fontWeight:600,color:C.ink9,borderBottom:`1px solid ${C.ink2}`}}>
+            {title}
+          </div>
+        )}
+        <div style={pad?{padding:'12px 16px 40px'}:{}}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   TOAST
+════════════════════════════════════════ */
+function Toast({msg,variant='kraft',onDone,duration=2800}){
+  const [fading,setFading]=useState(false);
+  const bg=variant==='kraft'?C.kraft:C.ink9;
+  useEffect(()=>{
+    const t=setTimeout(()=>setFading(true),duration);
+    const t2=setTimeout(()=>onDone&&onDone(),duration+400);
+    return()=>{clearTimeout(t);clearTimeout(t2)};
+  },[]);
+  return(
+    <div style={{
+      position:'absolute',top:54,left:'50%',
+      background:bg,color:'white',fontSize:13,fontWeight:500,
+      padding:'8px 18px',borderRadius:12,whiteSpace:'nowrap',
+      zIndex:100,boxShadow:'0 4px 16px rgba(0,0,0,.22)',
+      animation:fading?'toastOut .4s ease forwards':'toastIn .22s var(--ease)',
+      pointerEvents:'none',
+    }}>{msg}</div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SHARE IMAGE CARD
+════════════════════════════════════════ */
+function ShareCard({cols=3,rows=3,inProgress=false}){
+  const days=['一','二','三','四','五','六','日'],tod=3;
+  const tRows=[
+    {t:'17:30',l:'入场前',photos:[0,1,2]},
+    {t:'18:00',l:'中场',photos:[3,4,null]},
+    {t:'19:30',l:'高潮',photos:inProgress?[]:[5,6,7]},
+  ].slice(0,rows);
+  return(
+    <div style={{background:C.pb,borderRadius:16,padding:14,boxShadow:'0 4px 14px rgba(40,80,140,.2)',width:'100%'}}>
+      <div style={{border:'1px solid rgba(0,0,0,.07)',borderRadius:10,padding:10}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+          <div style={{background:'#FDFCF8',border:`1px solid ${C.kraft}`,borderRadius:6,padding:'2px 8px',fontFamily:'monospace',fontSize:9,color:C.kraft,letterSpacing:'.1em'}}>● RECORD</div>
+          <div style={{display:'flex',gap:2}}>
+            {days.map((d,i)=>(
+              <div key={i} style={{textAlign:'center',width:17}}>
+                <div style={{fontSize:6,color:C.ink5,fontFamily:'monospace'}}>{d}</div>
+                <div style={{width:14,height:14,borderRadius:'50%',margin:'1px auto 0',background:i===tod?C.kraft:'transparent',display:'flex',alignItems:'center',justifyContent:'center',fontSize:6,color:i===tod?'white':C.ink5,fontFamily:'monospace'}}>{i+19}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        {tRows.map((row,ri)=>(
+          <div key={ri} style={{display:'flex',gap:6,marginBottom:ri<tRows.length-1?7:0}}>
+            <div style={{width:40,flexShrink:0,paddingTop:3}}>
+              <div style={{fontSize:7,fontFamily:'monospace',color:C.ink5,lineHeight:1.3}}>{row.t}</div>
+              <div style={{fontSize:7,color:C.ink4,lineHeight:1.3}}>{row.l}</div>
+            </div>
+            <div style={{display:'flex',gap:3,flex:1}}>
+              {Array.from({length:cols}).map((_,ci)=>{
+                const has=ci<row.photos.length&&row.photos[ci]!==null;
+                const rot=(ci%2===0?1:-1)*1.8;
+                return has?(
+                  <div key={ci} style={{flex:1,background:'#FDFCF8',padding:'3px 3px 7px',borderRadius:3,transform:`rotate(${rot}deg)`,boxShadow:'0 1px 4px rgba(0,0,0,.12)',position:'relative'}}>
+                    <Img seed={row.photos[ci]||ci} h={32} r={2}/>
+                    <div style={{position:'absolute',bottom:1,right:3,fontFamily:'Caveat',fontSize:7,color:C.ink4}}>{ri*cols+ci+1}</div>
+                  </div>
+                ):(
+                  <div key={ci} style={{flex:1,height:42,borderRadius:3,background:'linear-gradient(135deg,#3A6FD0,#78AAFA)',display:'flex',alignItems:'center',justifyContent:'center',opacity:.46}}>
+                    <span style={{color:'white',fontWeight:700,fontSize:9}}>M</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:7,paddingTop:6,borderTop:'1px solid rgba(0,0,0,.06)'}}>
+          <div style={{fontFamily:'Caveat',fontSize:10,color:C.ink5,transform:'rotate(-2deg)'}}>Recorded for you</div>
+          <div style={{display:'flex',alignItems:'center',gap:4}}>
+            <div style={{width:13,height:13,borderRadius:'50%',background:C.ink,display:'flex',alignItems:'center',justifyContent:'center'}}><span style={{color:'white',fontSize:7,fontWeight:700}}>M</span></div>
+            <span style={{fontFamily:'monospace',fontSize:7,color:C.ink5}}>{cols*rows} frames</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: HOME (A1)
+════════════════════════════════════════ */
+function ScreenHome({push}){
+  const [phase,setPhase]=useState(0);
+  // 0=initial ai msg, 1=photo appeared, 2=chip visible, 3=chip dismissed
+  const [chipCount,setChipCount]=useState(3);
+  const [chipFading,setChipFading]=useState(false);
+  const [sheet,setSheet]=useState(false);
+  const chipRef=useRef(null);
+
+  useEffect(()=>{
+    // AI msg immediate, photo after 0.8s, chip after 1.8s
+    const t1=setTimeout(()=>setPhase(1),800);
+    const t2=setTimeout(()=>setPhase(2),1800);
+    return()=>{clearTimeout(t1);clearTimeout(t2)};
+  },[]);
+
+  useEffect(()=>{
+    if(phase!==2)return;
+    let c=3;
+    const iv=setInterval(()=>{
+      c--;
+      setChipCount(c);
+      if(c<=0){
+        clearInterval(iv);
+        setChipFading(true);
+        setTimeout(()=>setPhase(3),450);
+      }
+    },1000);
+    return()=>clearInterval(iv);
+  },[phase]);
+
+  function tapChip(e){
+    e.stopPropagation();
+    setPhase(3);
+    setTimeout(()=>setSheet(true),120);
+  }
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.paper}}>
+      <Notch/>
+      <SB/>
+      <NB title="MindBack" right={<NBBtn color={C.ink5}><Share s={18}/></NBBtn>}/>
+      {/* chat */}
+      <div style={{flex:1,overflowY:'auto',padding:'12px 14px',display:'flex',flexDirection:'column',gap:12}}>
+        {/* AI bubble */}
+        <div style={{display:'flex',gap:8,alignItems:'flex-start',animation:'fadeIn .3s ease'}}>
+          <div style={{width:30,height:30,borderRadius:'50%',background:C.ink,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,marginTop:2}}>
+            <span style={{color:'white',fontSize:12,fontWeight:700}}>M</span>
+          </div>
+          <div style={{background:C.warm,borderRadius:'4px 16px 16px 16px',padding:'10px 14px',maxWidth:'70%',fontSize:14,color:C.ink9,lineHeight:1.6}}>
+            今天天气不错，有什么想记录的吗？✨
+          </div>
+        </div>
+
+        {/* User photo — right aligned */}
+        {phase>=1&&(
+          <div style={{display:'flex',justifyContent:'flex-end',animation:'fadeIn .35s ease'}}>
+            <div>
+              <Img seed={0} w={180} h={210} r={14}/>
+              <div style={{textAlign:'right',marginTop:4}}>
+                <span style={{fontSize:11,color:C.ink4,fontFamily:'monospace'}}>20:31</span>
+              </div>
+
+              {/* ── SetLog Chip — RIGHT side, below photo ── */}
+              {phase===2&&(
+                <div
+                  ref={chipRef}
+                  onClick={tapChip}
+                  style={{
+                    marginTop:8,
+                    background:C.white,
+                    border:`1.5px solid ${C.kraft}`,
+                    borderRadius:16,padding:'12px 14px',
+                    display:'flex',alignItems:'center',gap:10,
+                    boxShadow:`0 3px 12px rgba(145,105,100,0.18)`,
+                    maxWidth:288,cursor:'pointer',
+                    animation:chipFading?'chipOut .4s var(--ease) forwards':'chipIn .35s var(--ease)',
+                    willChange:'transform,opacity',
+                    userSelect:'none',
+                  }}
+                >
+                  <div style={{width:38,height:38,borderRadius:12,flexShrink:0,background:`linear-gradient(135deg,${C.kraft},${C.kraftD})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>🎬</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:C.ink9}}>加入或发起 SetLog</div>
+                    <div style={{fontSize:11,color:C.ink5,marginTop:2}}>1 个活动匹配你的素材时间</div>
+                    <div style={{fontSize:10,color:chipCount<=1?'#E05C52':C.ink4,marginTop:3,fontFamily:'monospace',transition:'color .3s'}}>
+                      {chipCount>0?`${chipCount}s 后自动消失`:'正在消失…'}
+                    </div>
+                  </div>
+                  <Chev d="r" s={13}/>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* chip dismissed hint */}
+        {phase===3&&!sheet&&(
+          <div style={{display:'flex',justifyContent:'flex-end',animation:'fadeIn .3s ease'}}>
+            <span style={{fontSize:12,color:C.ink4,fontFamily:'monospace'}}>提示已消失，点击 🎬 可重新触发</span>
+          </div>
+        )}
+      </div>
+
+      {/* composer */}
+      <div style={{padding:'8px 12px 28px',background:C.white,borderTop:`1px solid ${C.ink2}`,display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+        <NBBtn color={C.ink4}><Plus s={22}/></NBBtn>
+        <div style={{flex:1,background:C.ink1,borderRadius:22,padding:'9px 16px',fontSize:14,color:C.ink4}}>记点什么…</div>
+        <NBBtn color={C.ink4}><Camera s={22}/></NBBtn>
+      </div>
+      <HomeBar/>
+
+      {/* Join Sheet */}
+      {sheet&&(
+        <Sheet title="加入哪个 SetLog？" onClose={()=>setSheet(false)}>
+          {/* Matched */}
+          <div
+            onClick={()=>{setSheet(false);setTimeout(()=>push('moments'),260)}}
+            style={{border:`2px solid ${C.kraft}`,borderRadius:16,padding:14,background:'#FDF7F5',marginBottom:10,cursor:'pointer',transition:'transform .12s',}}
+            onMouseDown={e=>e.currentTarget.style.transform='scale(.98)'}
+            onMouseUp={e=>e.currentTarget.style.transform=''}
+          >
+            <div style={{display:'flex',alignItems:'center',gap:12}}>
+              <Img seed={0} w={56} h={56} r={10}/>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:3}}>
+                  <span style={{fontSize:14,fontWeight:600,color:C.ink9}}>哥哥的月亮船</span>
+                  <Pill v="kraft"><Spark s={9}/>&nbsp;匹配</Pill>
+                </div>
+                <div style={{fontSize:12,color:C.ink5,display:'flex',alignItems:'center',gap:4}}>
+                  <Clock s={11}/> 18:00 中场 · 演唱会现场
+                </div>
+                <div style={{marginTop:6}}><Bar val={9} max={12}/></div>
+              </div>
+            </div>
+          </div>
+          {/* Create new */}
+          <div
+            onClick={()=>{setSheet(false);setTimeout(()=>push('create'),260)}}
+            style={{border:`1.5px dashed ${C.ink3}`,borderRadius:16,padding:14,display:'flex',alignItems:'center',gap:12,cursor:'pointer'}}
+          >
+            <div style={{width:56,height:56,borderRadius:10,background:C.ink1,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              <Plus s={22}/>
+            </div>
+            <span style={{fontSize:14,color:C.ink5}}>创建新 SetLog</span>
+            <div style={{marginLeft:'auto'}}><Chev d="r" s={13}/></div>
+          </div>
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: SELECT MOMENT (A3)
+════════════════════════════════════════ */
+const MOMENTS=[
+  {idx:1,time:'17:30',label:'入场前',slots:3,filled:3,state:'done'},
+  {idx:2,time:'18:00',label:'中场',slots:3,filled:2,state:'open'},
+  {idx:3,time:'19:30',label:'高潮曲目',slots:3,filled:3,state:'full'},
+  {idx:4,time:'20:45',label:'返场',slots:3,filled:1,state:'open'},
+  {idx:5,time:'21:00',label:'散场',slots:3,filled:0,state:'pending'},
+];
+function MCard({m,onTap}){
+  const cfg={
+    done:{bord:`1px solid ${C.ink2}`,bg:C.ink05,disc:C.ink2,discFg:C.ink5,badge:<Pill v="mint">已拍满</Pill>,tap:false},
+    open:{bord:`1.5px solid ${C.kraft}`,bg:'#FDF7F5',disc:C.kraft,discFg:'white',badge:null,tap:true},
+    full:{bord:`1px solid ${C.ink2}`,bg:C.ink05,disc:C.ink2,discFg:C.ink4,badge:<Pill sx={{background:C.ink1,color:C.ink4}}>坑位已满</Pill>,tap:false},
+    pending:{bord:`1px solid ${C.ink2}`,bg:C.white,disc:C.ink2,discFg:C.ink5,badge:<Pill v="default">未开始</Pill>,tap:false},
+  };
+  const cf=cfg[m.state];
+  return(
+    <div
+      onClick={cf.tap?onTap:undefined}
+      style={{
+        border:cf.bord,borderRadius:14,padding:'13px 14px',background:cf.bg,
+        display:'flex',alignItems:'center',gap:12,marginBottom:8,
+        opacity:m.state==='full'?0.52:1,
+        cursor:cf.tap?'pointer':'default',
+        transition:'transform .1s, box-shadow .1s',
+      }}
+      onMouseDown={cf.tap?e=>e.currentTarget.style.transform='scale(.98)':undefined}
+      onMouseUp={cf.tap?e=>{e.currentTarget.style.transform='';e.currentTarget.style.boxShadow=''}:undefined}
+    >
+      <div style={{width:36,height:36,borderRadius:'50%',background:cf.disc,display:'flex',alignItems:'center',justifyContent:'center',color:cf.discFg,fontSize:14,fontWeight:700,fontFamily:'monospace',flexShrink:0}}>{m.idx}</div>
+      <div style={{flex:1}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',marginBottom:3}}>
+          <span style={{fontSize:14,fontWeight:600,color:C.ink9}}>{m.label}</span>
+          {cf.badge}
+          {m.state==='open'&&<Pill v="kraft"><Spark s={9}/>&nbsp;推荐</Pill>}
+        </div>
+        <div style={{fontSize:12,color:C.ink5,display:'flex',alignItems:'center',gap:6}}>
+          <Clock s={11}/> {m.time} · {m.filled}/{m.slots} 人
+        </div>
+        {m.state==='open'&&<div style={{marginTop:5}}><Bar val={m.filled} max={m.slots}/></div>}
+      </div>
+      {cf.tap&&<Chev d="r" s={14}/>}
+    </div>
+  );
+}
+function ScreenMoments({push,pop}){
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.paper}}>
+      <Notch/>
+      <SB/>
+      <NB title="哥哥的月亮船" sub="选择你的时刻" left={<NBBtn onClick={pop}><Back/></NBBtn>}/>
+      <div style={{flex:1,overflowY:'auto',padding:'14px 14px 28px'}}>
+        <div style={{fontSize:12,color:C.ink5,marginBottom:12,lineHeight:1.6}}>
+          选择你想记录的时刻。<span style={{color:C.kraft}}>中场</span>目前有 1 个空位，最适合你的 20:31 素材。
+        </div>
+        {MOMENTS.map(m=><MCard key={m.idx} m={m} onTap={()=>push('publish',{moment:m})}/>)}
+      </div>
+      <HomeBar/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: PUBLISH (A4)
+════════════════════════════════════════ */
+function ScreenPublish({push,pop,params={}}){
+  const m=params.moment||MOMENTS[1];
+  const [cap,setCap]=useState('中场阳光太好了，忍不住拍了这张 ☀️');
+  const [submitting,setSubmitting]=useState(false);
+  const [editing,setEditing]=useState(false);
+  const [stickers,setStickers]=useState(false);
+
+  function submit(){
+    setSubmitting(true);
+    setTimeout(()=>push('submitted',{moment:m}),1200);
+  }
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.paper}}>
+      <Notch/>
+      <SB/>
+      <NB
+        title={`投递到 SetLog`}
+        left={<NBBtn onClick={pop}><Back/></NBBtn>}
+        right={!submitting&&<NBBtn color={C.kraft} onClick={submit}><span style={{fontSize:14,fontWeight:600}}>发布</span></NBBtn>}
+      />
+      <div style={{flex:1,overflowY:'auto'}}>
+        {/* Photo zone */}
+        <div style={{position:'relative',margin:'14px 14px 0'}}>
+          <Img seed={0} h={230} r={14}>
+            <div style={{position:'absolute',top:10,left:10}}><Pill v="kraft">① {m.time} {m.label}</Pill></div>
+            <div style={{position:'absolute',bottom:10,left:10,background:'rgba(0,0,0,.52)',backdropFilter:'blur(8px)',borderRadius:8,padding:'4px 9px',display:'flex',alignItems:'center',gap:4}}>
+              <Clock s={11}/><span style={{fontSize:11,color:'white',fontFamily:'monospace'}}>20:31</span>
+            </div>
+            <div style={{position:'absolute',bottom:10,right:10,background:'rgba(0,0,0,.52)',backdropFilter:'blur(8px)',borderRadius:8,padding:'4px 9px',display:'flex',alignItems:'center',gap:4}}>
+              <Pin s={11}/><span style={{fontSize:11,color:'white',fontFamily:'monospace'}}>演唱会现场</span>
+            </div>
+          </Img>
+        </div>
+        {/* Caption zone */}
+        <div style={{padding:'12px 14px'}}>
+          <div
+            style={{background:C.white,borderRadius:12,border:`1px solid ${editing?C.kraft:C.ink2}`,padding:'12px 14px',transition:'border-color .15s',cursor:'text'}}
+            onClick={()=>setEditing(true)}
+          >
+            <textarea
+              value={cap}
+              onChange={e=>setCap(e.target.value.slice(0,30))}
+              onBlur={()=>setEditing(false)}
+              maxLength={30}
+              rows={2}
+              style={{
+                width:'100%',background:'none',border:'none',outline:'none',
+                fontSize:14,color:C.ink9,lineHeight:1.6,resize:'none',
+                fontFamily:'-apple-system,"PingFang SC",sans-serif',
+              }}
+            />
+            <div style={{display:'flex',justifyContent:'flex-end',marginTop:4}}>
+              <span style={{fontSize:11,fontFamily:'monospace',color:cap.length>=28?C.kraft:C.ink4}}>{cap.length}/30</span>
+            </div>
+          </div>
+        </div>
+        {/* Stickers zone */}
+        <div style={{padding:'0 14px 24px'}}>
+          <div
+            onClick={()=>setStickers(s=>!s)}
+            style={{background:C.white,borderRadius:12,padding:'12px 14px',border:`1px solid ${C.ink2}`,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}
+          >
+            <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>✨</span><span style={{fontSize:14,color:C.ink7}}>官方贴纸</span></div>
+            <Chev d={stickers?'u':'d'} s={14}/>
+          </div>
+          {stickers&&(
+            <div style={{marginTop:8,display:'flex',gap:8,flexWrap:'wrap'}}>
+              {['🎤','🎵','⭐','🌙','🎬','💫'].map((e,i)=>(
+                <div key={i} style={{width:52,height:52,borderRadius:12,background:C.white,border:`1px solid ${C.ink2}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,cursor:'pointer'}}>
+                  {e}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* CTA */}
+      <div style={{padding:'12px 14px 32px',background:C.white,borderTop:`1px solid ${C.ink2}`,flexShrink:0}}>
+        <button
+          onClick={submit}
+          disabled={submitting}
+          style={{
+            width:'100%',padding:'14px 0',
+            background:submitting?C.ink3:`linear-gradient(135deg,${C.kraft},${C.kraftD})`,
+            color:'white',fontSize:16,fontWeight:600,
+            border:'none',borderRadius:14,cursor:submitting?'default':'pointer',
+            boxShadow:submitting?'none':`0 4px 16px rgba(145,105,100,.28)`,
+            transition:'all .2s',
+            display:'flex',alignItems:'center',justifyContent:'center',gap:8,
+          }}
+        >
+          {submitting?(
+            <>
+              <div style={{width:16,height:16,borderRadius:'50%',border:'2px solid rgba(255,255,255,.4)',borderTopColor:'white',animation:'spin .8s linear infinite'}}/>
+              投递中…
+            </>
+          ):'投递到 SetLog'}
+        </button>
+      </div>
+      <HomeBar/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: SUBMITTED (A5)
+════════════════════════════════════════ */
+function ScreenSubmitted({push,params={}}){
+  const m=params.moment||MOMENTS[1];
+  const [toast,setToast]=useState(true);
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.paper}}>
+      <Notch/>
+      <SB dark/>
+      <div style={{position:'relative',flexShrink:0}}>
+        <Img seed={5} h={150} r={0} overlay>
+          <div style={{position:'absolute',inset:0,padding:'10px 16px',display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+            <div style={{fontSize:20,fontWeight:700,color:'white',marginBottom:2}}>哥哥的月亮船</div>
+            <div style={{fontFamily:'monospace',fontSize:11,color:'rgba(255,255,255,.65)',letterSpacing:'.06em'}}>SETLOG · LIVE</div>
+          </div>
+        </Img>
+        {toast&&<Toast msg={`已加入 ${m.time} ${m.label} ✓`} onDone={()=>setToast(false)}/>}
+      </div>
+      <div style={{padding:'12px 16px 6px',background:C.white,borderBottom:`1px solid ${C.ink2}`,flexShrink:0}}>
+        <Bar val={10} max={12} label="总拼图进度"/>
+        <div style={{fontSize:11,color:C.ink5,marginTop:4,fontFamily:'monospace'}}>你的投递让进度 +1 🎉</div>
+      </div>
+      <div style={{flex:1,overflowY:'auto',padding:'12px 14px 12px'}}>
+        {[
+          {time:'17:30',label:'入场前',state:'done',photos:[0,1,2],own:-1},
+          {time:m.time,label:m.label,state:'active',photos:[3,null],own:0},
+          {time:'19:30',label:'高潮曲目',state:'pending',photos:[],own:-1},
+        ].map((s,si)=>(
+          <div key={si} style={{marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+              <span style={{fontFamily:'monospace',fontSize:11,color:C.ink4}}>{s.time}</span>
+              <span style={{fontSize:13,fontWeight:600,color:C.ink9}}>{s.label}</span>
+              <Pill v={s.state==='done'?'mint':s.state==='active'?'kraft':'ghost'}>
+                {s.state==='done'?'已拍满':s.state==='active'?'进行中':'未开始'}
+              </Pill>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              {[0,1,2].map(i=>(
+                <div key={i} style={{flex:1,position:'relative'}}>
+                  {i<s.photos.length&&s.photos[i]!==null?(
+                    <Img seed={s.photos[i]} h={80} r={10}>
+                      {s.own===i&&<>
+                        <div style={{position:'absolute',inset:0,border:`2.5px solid ${C.kraft}`,borderRadius:10}}/>
+                        <div style={{position:'absolute',top:5,right:5}}><Pill v="kraft">你</Pill></div>
+                      </>}
+                    </Img>
+                  ):(
+                    <div style={{height:80,borderRadius:10,background:C.ink1,border:`1px dashed ${C.ink3}`,display:'flex',alignItems:'center',justifyContent:'center'}}>
+                      {s.state!=='pending'&&<Plus s={18}/>}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      {/* Share CTA */}
+      <div style={{padding:'10px 14px 32px',background:C.white,borderTop:`1px solid ${C.ink2}`,flexShrink:0}}>
+        <button onClick={()=>push('share-detail')} style={{width:'100%',padding:'13px 0',background:C.ink9,color:'white',fontSize:15,fontWeight:600,border:'none',borderRadius:14,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+          <Share s={16}/> 分享这次记录
+        </button>
+      </div>
+      <HomeBar/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: SITE HOME (B1)
+════════════════════════════════════════ */
+function ScreenSite({push}){
+  const [tab,setTab]=useState(2);
+  const [sheet,setSheet]=useState(false);
+  const tabs=['脉络','话题','SetLog','成员'];
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.white}}>
+      <Notch/>
+      <SB/>
+      <div style={{padding:'0 16px 12px',borderBottom:`1px solid ${C.ink2}`,flexShrink:0}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:700,color:C.ink9}}>哥哥的月亮船</div>
+            <div style={{fontSize:12,color:C.ink5,marginTop:1}}>演唱会现场 · 今晚</div>
+          </div>
+          <AvStack names={['张','李','王','陈','赵']} size={26}/>
+        </div>
+        <div style={{background:'linear-gradient(135deg,#E6EEFB,#D0E3FA)',borderRadius:12,padding:'10px 12px',display:'flex',alignItems:'flex-start',gap:8}}>
+          <div style={{color:C.skyS,marginTop:1}}><Spark s={13}/></div>
+          <div>
+            <div style={{fontSize:12,fontWeight:600,color:C.ink,marginBottom:2}}>站点脉络</div>
+            <div style={{fontSize:12,color:C.ink7,lineHeight:1.55}}>演唱会已开始 2 小时，中场时刻最活跃，9 人已投递素材 ✨</div>
+          </div>
+        </div>
+      </div>
+      <div style={{flex:1,overflowY:'auto'}}>
+        <div style={{padding:'12px 16px 8px'}}>
+          <Img seed={0} h={170} r={16} overlay>
+            <div style={{position:'absolute',inset:0,padding:'12px 16px',display:'flex',flexDirection:'column',justifyContent:'space-between'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <Pill v="white" sx={{fontFamily:'monospace',letterSpacing:'.06em'}}>SETLOG · LIVE</Pill>
+                <div style={{width:8,height:8,borderRadius:'50%',background:'#4ADE80',animation:'pulse 2s infinite'}}/>
+              </div>
+              <div>
+                <Bar val={9} max={12} label="拼图进度" color={C.sky}/>
+                <button onClick={()=>setSheet(true)} style={{marginTop:10,background:C.sky,color:C.ink,border:'none',borderRadius:999,padding:'8px 16px',fontSize:13,fontWeight:600,cursor:'pointer'}}>
+                  打卡下一个时刻 →
+                </button>
+              </div>
+            </div>
+          </Img>
+        </div>
+        <div style={{padding:'0 16px'}}>
+          {['王小明 发布了 #入场前 的内容','陈大力 发布了 #中场 的内容','李晓雨 加入了活动'].map((t,i)=>(
+            <div key={i} style={{padding:'10px 0',borderBottom:`1px solid ${C.ink1}`,fontSize:13,color:C.ink7}}>{t}</div>
+          ))}
+        </div>
+      </div>
+      <div style={{borderTop:`1px solid ${C.ink2}`,display:'flex',padding:'6px 0 28px',flexShrink:0}}>
+        {tabs.map((t,i)=>(
+          <div key={i} onClick={()=>setTab(i)} style={{flex:1,textAlign:'center',padding:'6px 0',cursor:'pointer'}}>
+            <div style={{fontSize:12,color:i===tab?C.kraft:C.ink5,fontWeight:i===tab?600:400}}>{t}</div>
+            {i===tab&&<div style={{width:4,height:4,borderRadius:'50%',background:C.kraft,margin:'3px auto 0'}}/>}
+          </div>
+        ))}
+      </div>
+      <HomeBar/>
+      {sheet&&(
+        <Sheet title="选择素材来源" onClose={()=>setSheet(false)}>
+          {[
+            {icon:'📸',label:'即时拍摄',desc:'打开相机直接拍',primary:true},
+            {icon:'🖼️',label:'从相册选',desc:'选择已有照片',primary:false},
+            {icon:'📁',label:'从已记录的内容选',desc:'',badge:true,primary:false},
+          ].map((s,i)=>(
+            <div key={i} onClick={()=>{setSheet(false);setTimeout(()=>push('publish',{moment:MOMENTS[1]}),260)}} style={{display:'flex',alignItems:'center',gap:12,padding:'14px 0',borderBottom:i<2?`1px solid ${C.ink1}`:'none',cursor:'pointer'}}>
+              <div style={{width:46,height:46,borderRadius:13,flexShrink:0,background:s.primary?`linear-gradient(135deg,${C.kraft},${C.kraftD})`:C.ink1,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>{s.icon}</div>
+              <div style={{flex:1}}>
+                <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                  <span style={{fontSize:15,fontWeight:s.primary?600:400,color:s.primary?C.kraft:C.ink9}}>{s.label}</span>
+                  {s.badge&&<Pill v="sky">二期</Pill>}
+                </div>
+                {s.desc&&<div style={{fontSize:12,color:C.ink5}}>{s.desc}</div>}
+              </div>
+              <Chev d="r" s={13}/>
+            </div>
+          ))}
+        </Sheet>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: CREATE (C2)
+════════════════════════════════════════ */
+function GridPrev({cols=3,rows=3}){
+  return(
+    <div style={{background:C.pb,borderRadius:14,padding:12,border:'1.5px solid rgba(0,0,0,.07)'}}>
+      <div style={{fontFamily:'monospace',fontSize:9,color:C.ink,letterSpacing:'.1em',marginBottom:8}}>● RECORD</div>
+      <div style={{display:'grid',gridTemplateColumns:`repeat(${cols},1fr)`,gap:4}}>
+        {Array.from({length:cols*rows}).map((_,i)=>(
+          <div key={i} style={{height:36,borderRadius:4,background:i<4?grad(i):'#FDFCF8',border:'1px solid rgba(0,0,0,.05)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {i>=4&&<span style={{fontSize:7,color:C.ink4}}>—</span>}
+          </div>
+        ))}
+      </div>
+      <div style={{marginTop:8,fontFamily:'Caveat',fontSize:9,color:C.ink5}}>Recorded for you · {cols*rows} frames</div>
+    </div>
+  );
+}
+function Step({label,init=3,min=1,max=12}){
+  const [v,setV]=useState(init);
+  return(
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0'}}>
+      <span style={{fontSize:14,color:C.ink9}}>{label}</span>
+      <div style={{display:'flex',alignItems:'center',gap:14}}>
+        <button onClick={()=>setV(x=>Math.max(min,x-1))} style={{width:32,height:32,borderRadius:'50%',background:C.ink1,border:'none',cursor:'pointer',fontSize:20,color:C.ink7,display:'flex',alignItems:'center',justifyContent:'center'}}>−</button>
+        <span style={{fontSize:16,fontWeight:600,color:C.ink9,minWidth:20,textAlign:'center'}}>{v}</span>
+        <button onClick={()=>setV(x=>Math.min(max,x+1))} style={{width:32,height:32,borderRadius:'50%',background:C.ink1,border:'none',cursor:'pointer',fontSize:20,color:C.ink7,display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>
+      </div>
+    </div>
+  );
+}
+function ScreenCreate({push,pop}){
+  const [name,setName]=useState('哥哥的月亮船');
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.paper}}>
+      <Notch/>
+      <SB/>
+      <NB title="创建 SetLog" left={<NBBtn onClick={pop}><Back/></NBBtn>}/>
+      <div style={{flex:1,overflowY:'auto',padding:'14px 14px 0'}}>
+        <Img seed={0} h={110} r={14} sx={{marginBottom:10}}>
+          <div style={{position:'absolute',top:8,right:8}}><Pill v="white">封面照片</Pill></div>
+        </Img>
+        <div style={{background:C.white,borderRadius:12,padding:'12px 14px',border:`1px solid ${C.ink2}`,marginBottom:8,display:'flex',alignItems:'center',justifyContent:'space-between',cursor:'pointer'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontSize:18}}>🎤</span><span style={{fontSize:14,color:C.ink9}}>国家大剧院</span></div>
+          <Chev d="r" s={13}/>
+        </div>
+        <div style={{background:C.white,borderRadius:12,padding:'12px 14px',border:`1px solid ${C.ink2}`,marginBottom:8}}>
+          <div style={{fontSize:10,color:C.ink5,fontFamily:'monospace',marginBottom:4}}>SetLog 名称</div>
+          <input value={name} onChange={e=>setName(e.target.value)} style={{width:'100%',background:'none',border:'none',outline:'none',fontSize:16,fontWeight:500,color:C.ink9,fontFamily:'inherit'}}/>
+        </div>
+        <div style={{background:C.white,borderRadius:12,padding:'12px 14px',border:`1px solid ${C.ink2}`,marginBottom:8}}>
+          <div style={{fontSize:10,color:C.ink5,fontFamily:'monospace',marginBottom:8}}>活动时间</div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'center',gap:12}}>
+            <div style={{textAlign:'center'}}><div style={{fontSize:30,fontWeight:700,color:C.ink9,fontFamily:'monospace',lineHeight:1}}>19:00</div><div style={{fontSize:10,color:C.ink5,marginTop:3}}>开始</div></div>
+            <div style={{fontSize:20,color:C.ink3,fontWeight:300}}>→</div>
+            <div style={{textAlign:'center'}}><div style={{fontSize:30,fontWeight:700,color:C.ink9,fontFamily:'monospace',lineHeight:1}}>22:00</div><div style={{fontSize:10,color:C.ink5,marginTop:3}}>结束</div></div>
+          </div>
+        </div>
+        <div style={{background:C.white,borderRadius:12,padding:'0 14px',border:`1px solid ${C.ink2}`,marginBottom:8}}>
+          <Step label="时刻数" init={3}/>
+          <div style={{borderTop:`1px solid ${C.ink1}`}}/>
+          <Step label="每时刻人数" init={3}/>
+        </div>
+        <GridPrev cols={3} rows={3}/>
+        <div onClick={()=>push('moments')} style={{display:'flex',alignItems:'center',justifyContent:'center',gap:4,padding:'10px 0',cursor:'pointer'}}>
+          <span style={{fontSize:13,color:C.skyS}}>自定义每个时刻 · 进阶</span><Chev d="r" s={12}/>
+        </div>
+      </div>
+      <div style={{padding:'10px 14px 32px',background:C.white,borderTop:`1px solid ${C.ink2}`,flexShrink:0}}>
+        <button onClick={()=>push('moments')} style={{width:'100%',padding:'14px 0',background:`linear-gradient(135deg,${C.kraft},${C.kraftD})`,color:'white',fontSize:16,fontWeight:600,border:'none',borderRadius:14,cursor:'pointer',boxShadow:`0 4px 16px rgba(145,105,100,.28)`}}>
+          创建 SetLog
+        </button>
+      </div>
+      <HomeBar/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: SHARE DETAIL (E9)
+════════════════════════════════════════ */
+function ScreenShareDetail({push,pop}){
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.paper}}>
+      <Notch/>
+      <SB dark/>
+      <div style={{position:'relative',flexShrink:0}}>
+        <Img seed={5} h={170} r={0} overlay>
+          <div style={{position:'absolute',top:12,left:12}}><NBBtn onClick={pop} color="white"><Back/></NBBtn></div>
+          <div style={{position:'absolute',inset:0,padding:'10px 16px',display:'flex',flexDirection:'column',justifyContent:'flex-end'}}>
+            <div style={{fontSize:20,fontWeight:700,color:'white',marginBottom:2}}>哥哥的月亮船</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,.65)',fontFamily:'monospace'}}>3 时刻 · 9 张拼图</div>
+          </div>
+          <div style={{position:'absolute',top:12,right:12}}>
+            <button onClick={()=>push('share-panel')} style={{background:C.ink9,color:'white',border:'none',borderRadius:999,padding:'7px 14px',display:'flex',alignItems:'center',gap:6,fontSize:13,fontWeight:600,cursor:'pointer'}}>
+              <Share s={13}/> 分享
+            </button>
+          </div>
+        </Img>
+      </div>
+      <div style={{background:'#EEF5FC',padding:'8px 16px',display:'flex',alignItems:'center',gap:6,borderBottom:`1px solid rgba(0,0,0,.06)`,flexShrink:0}}>
+        <Spark s={11}/><span style={{fontSize:12,color:C.ink}}>已经可以分享 · 空位会用 MindBack 元素补</span>
+      </div>
+      <div style={{padding:'12px 16px 4px',flexShrink:0}}><Bar val={9} max={12} label="拼图进度"/></div>
+      <div style={{flex:1,overflowY:'auto',padding:'10px 16px 28px'}}>
+        <div style={{transform:'scale(.88)',transformOrigin:'top left',width:'114%'}}>
+          <ShareCard cols={3} rows={3}/>
+        </div>
+      </div>
+      <HomeBar/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: SHARE PANEL (E2)
+════════════════════════════════════════ */
+function ScreenSharePanel({push,pop}){
+  const [fmt,setFmt]=useState('square');
+  const [cap,setCap]=useState('哥哥的月亮船 · 今晚最美好的 9 个瞬间 🎤');
+  const fmts=[{id:'square',l:'方版·1:1'},{id:'tall',l:'长图·9:16'},{id:'double',l:'双拼·2张'}];
+  const chs=[{i:'💬',l:'WeChat'},{i:'🌐',l:'朋友圈'},{i:'📕',l:'小红书'},{i:'🐦',l:'微博'}];
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.paper}}>
+      <Notch/>
+      <SB/>
+      <NB title="分享 SetLog" left={<NBBtn onClick={pop}><Back/></NBBtn>}/>
+      <div style={{flex:1,overflowY:'auto',padding:'14px 14px 28px'}}>
+        <ShareCard cols={3} rows={3}/>
+        <div style={{display:'flex',gap:7,margin:'12px 0'}}>
+          {fmts.map(f=>(
+            <button key={f.id} onClick={()=>setFmt(f.id)} style={{flex:1,padding:'8px 0',cursor:'pointer',background:fmt===f.id?C.kraft:C.white,color:fmt===f.id?'white':C.ink7,border:`1px solid ${fmt===f.id?C.kraft:C.ink2}`,borderRadius:9,fontSize:12,fontWeight:500,transition:'all .15s'}}>
+              {f.l}
+            </button>
+          ))}
+        </div>
+        <div style={{background:C.white,borderRadius:12,padding:'12px 14px',border:`1px solid ${C.ink2}`,marginBottom:12}}>
+          <div style={{fontSize:10,color:C.ink5,fontFamily:'monospace',marginBottom:4}}>配文</div>
+          <textarea value={cap} onChange={e=>setCap(e.target.value)} rows={2} style={{width:'100%',background:'none',border:'none',outline:'none',fontSize:14,color:C.ink9,lineHeight:1.6,resize:'none',fontFamily:'inherit'}}/>
+        </div>
+        <div style={{display:'flex',justifyContent:'space-around',marginBottom:14}}>
+          {chs.map((ch,i)=>(
+            <div key={i} style={{textAlign:'center',cursor:'pointer'}}>
+              <div style={{width:52,height:52,borderRadius:16,background:C.white,border:`1px solid ${C.ink2}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,marginBottom:4}}>{ch.i}</div>
+              <span style={{fontSize:11,color:C.ink5}}>{ch.l}</span>
+            </div>
+          ))}
+        </div>
+        {[{i:'💾',l:'保存到相册'},{i:'🔗',l:'复制链接'}].map((a,i)=>(
+          <div key={i} style={{display:'flex',alignItems:'center',gap:12,padding:'13px 0',borderTop:`1px solid ${C.ink1}`,cursor:'pointer'}}>
+            <span style={{fontSize:20}}>{a.i}</span>
+            <span style={{fontSize:15,color:C.ink9}}>{a.l}</span>
+          </div>
+        ))}
+        <div style={{marginTop:12}}>
+          <button onClick={()=>push('completion')} style={{width:'100%',padding:'13px 0',background:`linear-gradient(135deg,${C.kraft},${C.kraftD})`,color:'white',fontSize:15,fontWeight:600,border:'none',borderRadius:14,cursor:'pointer',boxShadow:`0 4px 16px rgba(145,105,100,.28)`}}>
+            生成分享图
+          </button>
+        </div>
+      </div>
+      <HomeBar/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   SCREEN: COMPLETION (E1)
+════════════════════════════════════════ */
+function ScreenCompletion({push,pop}){
+  return(
+    <div style={{display:'flex',flexDirection:'column',height:'100%',background:'#09111F'}}>
+      <Notch/>
+      <SB dark/>
+      <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'16px 22px 44px',position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:'20%',left:'50%',transform:'translateX(-50%)',width:320,height:320,borderRadius:'50%',background:'radial-gradient(ellipse,rgba(120,170,250,.22),transparent 70%)',pointerEvents:'none',animation:'glow 3s ease infinite'}}/>
+        <div style={{fontFamily:'monospace',fontSize:11,color:C.sky,letterSpacing:'.14em',marginBottom:10}}>SETLOG · 拼齐了</div>
+        <div style={{fontSize:22,fontWeight:700,color:'white',textAlign:'center',lineHeight:1.4,marginBottom:20}}>一起留下了这 9 个瞬间</div>
+        <div style={{width:'100%',transform:'scale(.86)',transformOrigin:'top center',marginBottom:20}}>
+          <ShareCard cols={3} rows={3}/>
+        </div>
+        <button onClick={()=>push('share-panel')} style={{width:'100%',padding:'14px 0',background:C.sky,color:C.ink,border:'none',borderRadius:14,cursor:'pointer',fontSize:15,fontWeight:600,marginBottom:10}}>
+          分享这张 SetLog
+        </button>
+        <button onClick={pop} style={{width:'100%',padding:'13px 0',background:'rgba(255,255,255,.08)',color:'rgba(255,255,255,.5)',border:'none',borderRadius:14,cursor:'pointer',fontSize:15,fontWeight:500}}>
+          稍后再说
+        </button>
+      </div>
+      <HomeBar dark/>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   NAVIGATION SYSTEM
+════════════════════════════════════════ */
+const SCREEN_MAP={
+  home:ScreenHome,
+  moments:ScreenMoments,
+  publish:ScreenPublish,
+  submitted:ScreenSubmitted,
+  site:ScreenSite,
+  create:ScreenCreate,
+  'share-detail':ScreenShareDetail,
+  'share-panel':ScreenSharePanel,
+  completion:ScreenCompletion,
+};
+
+function Navigator({initialScreen='home'}){
+  const [stack,setStack]=useState([{id:initialScreen,params:{},key:0}]);
+  const [leaving,setLeaving]=useState(null);
+  const [enterDir,setEnterDir]=useState('r'); // 'r' or 'l'
+  const keyRef=useRef(1);
+
+  const push=useCallback((id,params={})=>{
+    const key=keyRef.current++;
+    setEnterDir('r');
+    setStack(s=>[...s,{id,params,key}]);
+  },[]);
+
+  const pop=useCallback(()=>{
+    setStack(s=>{
+      if(s.length<=1)return s;
+      const top=s[s.length-1];
+      setLeaving({...top,dir:'r'});
+      setTimeout(()=>setLeaving(null),320);
+      return s.slice(0,-1);
+    });
+  },[]);
+
+  const reset=useCallback((id,params={})=>{
+    const key=keyRef.current++;
+    setEnterDir('r');
+    setStack([{id,params,key}]);
+  },[]);
+
+  const current=stack[stack.length-1];
+  const Comp=SCREEN_MAP[current.id]||ScreenHome;
+
+  return(
+    <NavCtx.Provider value={{push,pop,reset,stack}}>
+      <div style={{position:'relative',width:'100%',height:'100%',overflow:'hidden',borderRadius:48}}>
+        {/* Leaving screen */}
+        {leaving&&(()=>{
+          const LC=SCREEN_MAP[leaving.id]||ScreenHome;
+          return(
+            <div className={leaving.dir==='r'?'phone-screen exit-r':'phone-screen exit-l'} style={{zIndex:2}}>
+              <LC push={push} pop={pop} params={leaving.params}/>
+            </div>
+          );
+        })()}
+        {/* Current screen */}
+        <div
+          key={current.key}
+          className={`phone-screen ${stack.length>1?`enter-${enterDir}`:''}`}
+          style={{zIndex:3}}
+        >
+          <Comp push={push} pop={pop} reset={reset} params={current.params}/>
+        </div>
+      </div>
+    </NavCtx.Provider>
+  );
+}
+
+/* ════════════════════════════════════════
+   APP ROOT
+════════════════════════════════════════ */
+function App(){
+  const [flow,setFlow]=useState('home');
+  const [resetKey,setResetKey]=useState(0);
+
+  function switchFlow(id){
+    setFlow(id);
+    setResetKey(k=>k+1);
+  }
+
+  const demoFlows=[
+    {id:'home',label:'A 首页'},
+    {id:'moments',label:'A3 选时刻'},
+    {id:'site',label:'B 站点'},
+    {id:'create',label:'C 创建'},
+    {id:'share-detail',label:'E 分享'},
+    {id:'completion',label:'E1 完成'},
+  ];
+
+  return(
+    <>
+      <div className="phone">
+        <Navigator key={`${flow}-${resetKey}`} initialScreen={flow}/>
+      </div>
+      <div className="demo-nav">
+        <span style={{fontSize:11,fontFamily:'monospace',color:'rgba(0,0,0,.35)',paddingRight:4}}>跳转流程</span>
+        <span className="demo-sep">·</span>
+        {demoFlows.map((f,i)=>(
+          <React.Fragment key={f.id}>
+            {i>0&&<span className="demo-sep">·</span>}
+            <button className={`demo-btn${flow===f.id?' active':''}`} onClick={()=>switchFlow(f.id)}>{f.label}</button>
+          </React.Fragment>
+        ))}
+      </div>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
